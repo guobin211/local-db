@@ -1,0 +1,93 @@
+import { invoke } from '@tauri-apps/api/core';
+
+// 数据库类型
+export type DatabaseType = 'mysql' | 'postgresql' | 'mongodb' | 'redis' | 'qdrant' | 'neo4j' | 'seekdb' | 'surrealdb';
+
+// 数据库状态
+export type DatabaseStatus = 'running' | 'stopped' | 'notinstalled';
+
+// 数据库信息接口
+export interface DatabaseInfo {
+  id: string;
+  name: string;
+  type: DatabaseType;
+  version: string;
+  install_path: string;
+  data_path: string;
+  log_path: string;
+  port: number;
+  username?: string;
+  password?: string;
+  config?: string;
+  status: DatabaseStatus;
+  auto_start: boolean;
+  pid?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// 操作结果接口
+export interface OperationResult<T = void> {
+  success: boolean;
+  message: string;
+  data?: T;
+}
+
+// 安装数据库参数
+export interface InstallDatabaseParams {
+  db_type: string; // 改为 string 以支持所有数据库类型
+  version?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+}
+
+// 获取所有数据库列表
+export async function getDatabases(): Promise<DatabaseInfo[]> {
+  return invoke('get_databases');
+}
+
+// 根据ID获取数据库信息
+export async function getDatabase(id: string): Promise<DatabaseInfo | null> {
+  return invoke('get_database', { id });
+}
+
+// 根据数据库类型获取数据库
+export async function getDatabaseByType(dbType: DatabaseType): Promise<DatabaseInfo | null> {
+  return invoke('get_database_by_type', { dbType });
+}
+
+// 启动数据库
+export async function startDatabase(id: string): Promise<OperationResult> {
+  return invoke('start_database', { id });
+}
+
+// 停止数据库
+export async function stopDatabase(id: string): Promise<OperationResult> {
+  return invoke('stop_database', { id });
+}
+
+// 重启数据库
+export async function restartDatabase(id: string): Promise<OperationResult> {
+  return invoke('restart_database', { id });
+}
+
+// 获取数据库状态
+export async function getDatabaseStatus(id: string): Promise<DatabaseStatus | null> {
+  return invoke('get_database_status', { id });
+}
+
+// 删除数据库
+export async function deleteDatabase(id: string, withData: boolean = false): Promise<OperationResult> {
+  return invoke('delete_database', { id, withData });
+}
+
+// 安装数据库
+export async function installDatabase(params: InstallDatabaseParams): Promise<OperationResult<DatabaseInfo>> {
+  return invoke('install_database', { params });
+}
+
+// 更新数据库自启动设置
+export async function updateDatabaseAutostart(id: string, autoStart: boolean): Promise<OperationResult> {
+  return invoke('update_database_autostart', { id, autoStart });
+}

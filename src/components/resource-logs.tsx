@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { FiChevronDown, FiSearch, FiDownload, FiTrash2 } from 'react-icons/fi';
 import { LogEntry } from '../types';
 
 const MOCK_LOGS: LogEntry[] = [
@@ -62,7 +63,7 @@ const MOCK_LOGS: LogEntry[] = [
 ];
 
 export const ResourceLogs: React.FC = () => {
-  const [logs, setLogs] = useState<LogEntry[]>(MOCK_LOGS);
+  const [logs, _setLogs] = useState<LogEntry[]>(MOCK_LOGS);
   const [filter, setFilter] = useState('');
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -74,13 +75,13 @@ export const ResourceLogs: React.FC = () => {
   const getLevelColor = (level: string) => {
     switch (level) {
       case 'INFO':
-        return 'text-blue-400';
+        return 'text-blue-600 dark:text-blue-400';
       case 'WARN':
-        return 'text-amber-400';
+        return 'text-amber-600 dark:text-amber-400';
       case 'ERROR':
-        return 'text-red-500';
+        return 'text-red-600 dark:text-red-500';
       default:
-        return 'text-slate-400';
+        return 'text-slate-500 dark:text-slate-400';
     }
   };
 
@@ -101,23 +102,24 @@ export const ResourceLogs: React.FC = () => {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <select className="bg-card-dark border-border-dark focus:ring-primary focus:border-primary h-10 appearance-none rounded-lg border px-4 pr-10 text-sm font-bold text-white transition-all focus:ring-1">
+            <select className="dark:bg-card-dark dark:border-border-dark focus:ring-primary focus:border-primary h-10 appearance-none rounded-lg border border-gray-200 bg-white px-4 pr-10 text-sm font-bold text-slate-900 transition-all focus:ring-1 dark:text-white">
               <option>MongoDB (Running)</option>
               <option>Redis (Running)</option>
               <option>Neo4j (Stopped)</option>
             </select>
-            <span className="material-symbols-outlined pointer-events-none absolute top-2.5 right-3 text-[#9da6b9]">
-              keyboard_arrow_down
-            </span>
+            <FiChevronDown
+              size={20}
+              className="pointer-events-none absolute top-2.5 right-3 text-slate-500 dark:text-[#9da6b9]"
+            />
           </div>
 
-          <div className="group relative w-[300px]">
+          <div className="group relative w-75">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <span className="material-symbols-outlined text-[18px] text-[#9da6b9]">search</span>
+              <FiSearch size={18} className="text-slate-400 dark:text-[#9da6b9]" />
             </div>
             <input
               type="text"
-              className="bg-card-dark border-border-dark focus:ring-primary block h-10 w-full rounded-lg border pr-4 pl-10 text-xs text-white placeholder-[#9da6b9] transition-all focus:ring-1"
+              className="dark:bg-card-dark dark:border-border-dark focus:ring-primary block h-10 w-full rounded-lg border border-gray-200 bg-white pr-4 pl-10 text-xs text-slate-900 placeholder-slate-400 transition-all focus:ring-1 dark:text-white dark:placeholder-[#9da6b9]"
               placeholder="Search logs..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -126,21 +128,21 @@ export const ResourceLogs: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <button className="bg-card-dark border-border-dark flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold text-[#9da6b9] transition-all hover:text-white">
-            <span className="material-symbols-outlined text-[18px]">file_download</span>
+          <button className="dark:bg-card-dark dark:border-border-dark flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-xs font-bold text-slate-500 transition-all hover:text-slate-900 dark:text-[#9da6b9] dark:hover:text-white">
+            <FiDownload size={18} />
             Export
           </button>
-          <button className="flex h-10 items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 text-xs font-bold text-red-500 transition-all hover:bg-red-500/20">
-            <span className="material-symbols-outlined text-[18px]">delete_forever</span>
+          <button className="flex h-10 items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 text-xs font-bold text-red-600 transition-all hover:bg-red-500/20 dark:text-red-500">
+            <FiTrash2 size={18} />
             Clear Logs
           </button>
         </div>
       </div>
 
       {/* Terminal View */}
-      <div className="bg-card-dark border-border-dark flex flex-1 flex-col overflow-hidden rounded-xl border shadow-2xl">
+      <div className="dark:bg-card-dark dark:border-border-dark flex flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl">
         {/* Terminal Header */}
-        <div className="border-border-dark flex items-center justify-between border-b bg-[#1c1f27] px-5 py-3">
+        <div className="dark:border-border-dark flex items-center justify-between border-b border-gray-200 bg-slate-50 px-5 py-3 dark:bg-[#1c1f27]">
           <div className="flex items-center gap-2">
             <div className="mr-4 flex gap-1.5">
               <div className="size-3 rounded-full bg-red-500/60"></div>
@@ -151,8 +153,8 @@ export const ResourceLogs: React.FC = () => {
               STDOUT — MONGODB.LOG
             </p>
           </div>
-          <div className="flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+          <div className="flex items-center gap-1.5 rounded bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-600 dark:text-green-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-600 dark:bg-green-500"></span>
             LIVE
           </div>
         </div>
@@ -164,23 +166,23 @@ export const ResourceLogs: React.FC = () => {
               key={i}
               className={`group flex gap-4 rounded-sm px-2 py-1.5 transition-colors ${getBgColor(log.level)}`}
             >
-              <span className="shrink-0 text-slate-600 opacity-40 transition-opacity select-none group-hover:opacity-100">
+              <span className="shrink-0 text-slate-400 opacity-100 transition-opacity select-none group-hover:opacity-100 dark:text-slate-600 dark:opacity-40">
                 {log.timestamp}
               </span>
               <span className={`w-12 shrink-0 font-bold ${getLevelColor(log.level)}`}>{log.level}</span>
-              <span className="break-all text-slate-300">{log.message}</span>
+              <span className="break-all text-slate-700 dark:text-slate-300">{log.message}</span>
             </div>
           ))}
           <div ref={logEndRef} />
         </div>
 
         {/* Terminal Footer */}
-        <div className="border-border-dark flex items-center justify-between border-t bg-[#1c1f27] px-5 py-2">
-          <div className="flex items-center gap-4 font-mono text-[10px] text-[#9da6b9]">
+        <div className="dark:border-border-dark flex items-center justify-between border-t border-gray-200 bg-slate-50 px-5 py-2 dark:bg-[#1c1f27]">
+          <div className="flex items-center gap-4 font-mono text-[10px] text-slate-500 dark:text-[#9da6b9]">
             <span>Lines: {filteredLogs.length}</span>
             <span>Size: 2.4 MB</span>
           </div>
-          <div className="flex items-center gap-2 font-mono text-[10px] text-[#9da6b9]">
+          <div className="flex items-center gap-2 font-mono text-[10px] text-slate-500 dark:text-[#9da6b9]">
             Auto-scroll: <span className="text-primary font-bold">ON</span>
           </div>
         </div>

@@ -14,16 +14,24 @@
       {
         "title": "local-db",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": true
       }
     ],
     "security": {
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/guobin211/local-db/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3QjkxMzgyMEFCNDZENzcKUldSM2JiUUtnaE81dDliRityTi9PMzJsaTZXMElnQ3BxbjI3S3lGNXlKbkExa20rbEJWQzVPYkkK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check)",
+      "Bash(npm run build)",
+      "Bash(npm run tauri build:*)",
+      "Bash(cargo build:*)",
+      "Bash(pnpm build)",
+      "Bash(cargo check:*)",
+      "Bash(pnpm tauri dev:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill -9)"
+    ]
+  }
+}

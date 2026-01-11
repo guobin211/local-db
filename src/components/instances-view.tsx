@@ -1,0 +1,350 @@
+import React, { useEffect, useState } from 'react';
+import {
+  FiGrid,
+  FiZap,
+  FiGitBranch,
+  FiShare2,
+  FiRepeat,
+  FiList,
+  FiAlertTriangle,
+  FiChevronLeft,
+  FiChevronRight,
+  FiTrash2
+} from 'react-icons/fi';
+import { DBInstance, DBStatus } from '../types';
+import {
+  getDatabases,
+  startDatabase,
+  stopDatabase,
+  deleteDatabase,
+  installDatabase,
+  DatabaseInfo
+} from '../command/database';
+
+// 支持的数据库类型列表（用于安装未安装的数据库）
+const SUPPORTED_DATABASES = [
+  { type: 'mysql', name: 'MySQL', icon: 'grid_view', colorClass: 'text-blue-500 bg-blue-500/10' },
+  { type: 'postgresql', name: 'PostgreSQL', icon: 'grid_view', colorClass: 'text-blue-600 bg-blue-600/10' },
+  { type: 'mongodb', name: 'MongoDB', icon: 'grid_view', colorClass: 'text-green-500 bg-green-500/10' },
+  { type: 'redis', name: 'Redis', icon: 'bolt', colorClass: 'text-red-500 bg-red-500/10' },
+  { type: 'neo4j', name: 'Neo4j', icon: 'account_tree', colorClass: 'text-blue-500 bg-blue-500/10' },
+  { type: 'qdrant', name: 'Qdrant', icon: 'hub', colorClass: 'text-indigo-500 bg-indigo-500/10' },
+  { type: 'surrealdb', name: 'SurrealDB', icon: 'all_inclusive', colorClass: 'text-orange-500 bg-orange-500/10' },
+  { type: 'seekdb', name: 'SeekDB', icon: 'table_rows', colorClass: 'text-slate-400 bg-slate-400/10' }
+];
+
+const getIconComponent = (iconName: string) => {
+  switch (iconName) {
+    case 'grid_view':
+      return FiGrid;
+    case 'bolt':
+      return FiZap;
+    case 'account_tree':
+      return FiGitBranch;
+    case 'hub':
+      return FiShare2;
+    case 'all_inclusive':
+      return FiRepeat;
+    case 'table_rows':
+      return FiList;
+    default:
+      return FiList;
+  }
+};
+
+interface InstancesViewProps {}
+
+export const InstancesView: React.FC<InstancesViewProps> = () => {
+  const [databases, setDatabases] = useState<DBInstance[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // 将 DatabaseInfo 转换为 DBInstance
+  const convertToDBInstance = (dbInfo: DatabaseInfo): DBInstance => {
+    const displayInfo = getDbDisplayInfo(dbInfo.type);
+
+    // 转换状态
+    let status: DBStatus;
+    if (dbInfo.status === 'running') {
+      status = DBStatus.RUNNING;
+    } else if (dbInfo.status === 'stopped') {
+      status = DBStatus.STOPPED;
+    } else {
+      status = DBStatus.NOT_INSTALLED;
+    }
+
+    return {
+      ...dbInfo,
+      id: dbInfo.id,
+      name: displayInfo.name,
+      version: dbInfo.version,
+      status,
+      port: dbInfo.port.toString(),
+      meta: dbInfo.pid ? `PID: ${dbInfo.pid}` : '',
+      icon: displayInfo.icon,
+      colorClass: displayInfo.colorClass
+    };
+  };
+
+  // 加载数据库列表
+  const loadDatabases = async () => {
+    try {
+      const dbs = await getDatabases();
+      const instances = dbs.map(convertToDBInstance);
+      setDatabases(instances);
+    } catch (error) {
+      console.error('Failed to load databases:', error);
+    }
+  };
+
+  // 初始加载
+  useEffect(() => {
+    loadDatabases();
+  }, []);
+
+  // 获取数据库的显示信息（图标、颜色等）
+  const getDbDisplayInfo = (dbType: string) => {
+    const found = SUPPORTED_DATABASES.find((db) => db.type === dbType);
+    return found || { name: dbType, icon: 'grid_view', colorClass: 'text-gray-500 bg-gray-500/10', type: dbType };
+  };
+
+  // 处理安装数据库
+  const handleInstall = async (dbType: string) => {
+    setLoading(true);
+    try {
+      const result = await installDatabase({ db_type: dbType });
+      if (result.success) {
+        await loadDatabases();
+      }
+    } catch (error) {
+      console.error('Failed to install database:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 处理启动数据库
+  const handleStart = async (id: string, name: string) => {
+    setLoading(true);
+    try {
+      const result = await startDatabase(id);
+      if (result.success) {
+        await loadDatabases();
+      } else {
+        console.error(`Failed to start ${name}: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to start database:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 处理停止数据库
+  const handleStop = async (id: string, name: string) => {
+    setLoading(true);
+    try {
+      const result = await stopDatabase(id);
+      if (result.success) {
+        await loadDatabases();
+      } else {
+        console.error(`Failed to stop ${name}: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to stop database:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 处理删除数据库
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete ${name}?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await deleteDatabase(id, false);
+      if (result.success) {
+        await loadDatabases();
+      } else {
+        console.error(`Failed to delete ${name}: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Failed to delete database:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 合并已安装的数据库和未安装的数据库
+  const installedTypes = new Set(databases.map((db) => db.type));
+  const notInstalledDbs = SUPPORTED_DATABASES.filter((db) => !installedTypes.has(db.type)).map((db) => ({
+    id: `not-installed-${db.type}`,
+    name: db.name,
+    version: 'Not Installed',
+    type: db.type,
+    status: DBStatus.NOT_INSTALLED,
+    port: '-',
+    meta: 'Click to install',
+    icon: db.icon,
+    colorClass: db.colorClass
+  }));
+
+  const allDatabases = [...databases, ...notInstalledDbs].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div className="dark:bg-card-dark dark:border-border-dark flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="dark:border-border-dark dark:bg-card-dark flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Active Instances</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">Sort by:</span>
+          <button className="hover:text-primary flex items-center gap-1 text-xs font-bold text-slate-900 transition-colors dark:text-white">
+            Name <FiChevronRight size={14} className="rotate-90" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-x-auto">
+        <table className="w-full min-w-200 border-collapse text-left">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-slate-50 dark:bg-[#1c1f27]">
+              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+                Database
+              </th>
+              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+                Type
+              </th>
+              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+                Status
+              </th>
+              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+                Port / Meta
+              </th>
+              <th className="px-6 py-4 text-right text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="dark:divide-border-dark divide-y divide-gray-200">
+            {allDatabases.map((db) => {
+              const IconComponent = getIconComponent(db.icon);
+              const displayInfo = getDbDisplayInfo(db.type);
+              return (
+                <tr key={db.id} className="group transition-colors hover:bg-slate-50 dark:hover:bg-white/2">
+                  <td className="px-6 py-5">
+                    <div className="flex items-center gap-3">
+                      <div className={`flex size-10 items-center justify-center rounded-lg ${displayInfo.colorClass}`}>
+                        <IconComponent size={20} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">{db.name}</p>
+                        <p className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">{db.version}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <span className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">{db.type}</span>
+                  </td>
+                  <td className="px-6 py-5">
+                    {db.status === DBStatus.RUNNING && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-green-500 uppercase">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"></span>
+                        Running
+                      </span>
+                    )}
+                    {db.status === DBStatus.STOPPED && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:bg-white/5 dark:text-[#9da6b9]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
+                        Stopped
+                      </span>
+                    )}
+                    {db.status === DBStatus.NOT_INSTALLED && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-amber-500 uppercase">
+                        <FiAlertTriangle size={14} />
+                        Not Installed
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-5">
+                    {db.status === DBStatus.RUNNING ? (
+                      <p className="font-mono text-xs text-slate-500 dark:text-[#9da6b9]">{db.port}</p>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 italic opacity-60 dark:text-[#9da6b9]">
+                        {db.meta || '-'}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-6 py-5 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      {db.status === DBStatus.RUNNING ? (
+                        <>
+                          <button
+                            onClick={() => handleStop(db.id, db.name)}
+                            disabled={loading}
+                            className="rounded-lg border border-red-500/30 px-4 py-1.5 text-[11px] font-bold tracking-wider text-red-500 uppercase transition-all hover:bg-red-500/10 disabled:opacity-50"
+                          >
+                            Stop
+                          </button>
+                          <button
+                            onClick={() => handleDelete(db.id, db.name)}
+                            disabled={loading}
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-slate-500 transition-all hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
+                          >
+                            <FiTrash2 size={14} />
+                          </button>
+                        </>
+                      ) : db.status === DBStatus.STOPPED ? (
+                        <>
+                          <button
+                            onClick={() => handleStart(db.id, db.name)}
+                            disabled={loading}
+                            className="bg-primary hover:bg-primary/90 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all disabled:opacity-50"
+                          >
+                            Start
+                          </button>
+                          <button
+                            onClick={() => handleDelete(db.id, db.name)}
+                            disabled={loading}
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-slate-500 transition-all hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
+                          >
+                            <FiTrash2 size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleInstall(db.type)}
+                          disabled={loading}
+                          className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
+                        >
+                          Install
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="dark:border-border-dark flex shrink-0 items-center justify-between border-t border-gray-200 bg-slate-50 px-6 py-4 dark:bg-[#1c1f27]">
+        <p className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">
+          Showing {allDatabases.length} database engines ({databases.length} installed)
+        </p>
+        <div className="flex gap-2">
+          <button
+            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-200 disabled:opacity-20 dark:text-[#9da6b9] dark:hover:bg-white/5"
+            disabled
+          >
+            <FiChevronLeft size={20} />
+          </button>
+          <button className="rounded-md p-1.5 text-slate-500 hover:bg-slate-200 dark:text-[#9da6b9] dark:hover:bg-white/5">
+            <FiChevronRight size={20} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

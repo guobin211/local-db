@@ -22,4 +22,4 @@ export interface LogEntry {
   message: string;
 }
 
-export type ViewType = 'dashboard' | 'instances' | 'logs' | 'backup';
+export type ViewType = 'dashboard' | 'instances' | 'logs' | 'backup' | 'settings';

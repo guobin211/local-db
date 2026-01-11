@@ -1,0 +1,14 @@
+.devcontainer/docker
+.codebuddy
+target
+node_modules
+dist
+build
+gen
+uploads
+public
+icons
+*.gen.ts
+*-lock.yaml
+.tanstack
+.next

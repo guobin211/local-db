@@ -33,6 +33,43 @@ mod imp {
     const HOMEBREW_INSTALL_URL: &str =
         "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh";
 
+    /// 获取 Homebrew 已安装的数据库类型列表
+    pub fn get_installed_databases_from_homebrew() -> Vec<DatabaseType> {
+        if let Ok(brew) = Homebrew::bootstrap() {
+            let mut installed = Vec::new();
+
+            // 检查每种数据库类型的 Homebrew formula 是否已安装
+            let formulas = vec![
+                ("redis", DatabaseType::Redis),
+                ("mysql", DatabaseType::MySQL),
+                ("postgresql", DatabaseType::PostgreSQL),
+                ("mongodb-community@7.0", DatabaseType::MongoDB),
+                ("qdrant", DatabaseType::Qdrant),
+                ("seekdb", DatabaseType::SeekDB),
+                ("surreal", DatabaseType::SurrealDB),
+            ];
+
+            for (formula, db_type) in formulas {
+                if brew.is_formula_installed(formula).unwrap_or(false) {
+                    installed.push(db_type);
+                }
+            }
+
+            installed
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 检查 Homebrew 服务的运行状态
+    pub fn get_homebrew_service_status(service: &str) -> Option<bool> {
+        if let Ok(brew) = Homebrew::bootstrap() {
+            brew.get_service_status(service).ok()
+        } else {
+            None
+        }
+    }
+
     pub fn install_database_via_homebrew(
         db_type: &DatabaseType,
         storage_path: &Path,
@@ -112,7 +149,6 @@ mod imp {
             DatabaseType::MySQL => configure_mysql(brew, storage_path, port),
             DatabaseType::PostgreSQL => configure_postgresql(brew, storage_path, port),
             DatabaseType::MongoDB => configure_mongodb(brew, storage_path, port),
-            DatabaseType::Neo4j => configure_neo4j(brew, storage_path, port),
             DatabaseType::Qdrant => configure_qdrant(brew, storage_path, port),
             DatabaseType::SeekDB => configure_seekdb(brew, storage_path, port),
             DatabaseType::SurrealDB => configure_surrealdb(brew, storage_path, port),
@@ -121,10 +157,9 @@ mod imp {
 
     fn configure_redis(brew: &Homebrew, storage_path: &Path) -> Result<ConfiguredPaths> {
         let prefix = brew.prefix(Some("redis"))?;
-        let conf_path = prefix.join("etc").join("redis.conf");
-        if !conf_path.exists() {
-            bail!("Redis config not found at {}", conf_path.display());
-        }
+        let etc_dir = prefix.join("etc");
+        utils::ensure_dir(&etc_dir)?;
+        let conf_path = etc_dir.join("redis.conf");
 
         let data_dir = utils::get_db_data_path(storage_path, "redis");
         let logs_dir = utils::get_db_log_path(storage_path, "redis");
@@ -132,21 +167,46 @@ mod imp {
         utils::ensure_dir(&logs_dir)?;
         let log_file = logs_dir.join("redis.log");
 
-        let contents = fs::read_to_string(&conf_path)
-            .with_context(|| format!("Failed to read redis.conf at {}", conf_path.display()))?;
+        // 如果配置文件存在，读取并更新；否则创建新配置
+        let contents = if conf_path.exists() {
+            fs::read_to_string(&conf_path)
+                .with_context(|| format!("Failed to read redis.conf at {}", conf_path.display()))?
+        } else {
+            String::new()
+        };
+
         let mut rewritten = String::with_capacity(contents.len() + 200);
+        let mut has_dir = false;
+        let mut has_logfile = false;
+
         for line in contents.lines() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("dir ") {
                 rewritten.push_str(&format!("dir {}\n", data_dir.display()));
+                has_dir = true;
             } else if trimmed.starts_with("logfile ") {
                 rewritten.push_str(&format!("logfile {}\n", log_file.display()));
+                has_logfile = true;
             } else {
                 rewritten.push_str(line);
                 rewritten.push('\n');
             }
         }
-        fs::write(&conf_path, rewritten).with_context(|| "Failed to update redis.conf")?;
+
+        // 如果配置文件是新的或者缺少必要项，追加默认配置
+        if contents.is_empty() || !has_dir {
+            rewritten.push_str(&format!("dir {}\n", data_dir.display()));
+        }
+        if contents.is_empty() || !has_logfile {
+            rewritten.push_str(&format!("logfile {}\n", log_file.display()));
+        }
+        // 如果是空配置文件，添加一些基本设置
+        if contents.is_empty() {
+            rewritten.push_str("appendonly no\n");
+            rewritten.push_str("loglevel notice\n");
+        }
+
+        fs::write(&conf_path, rewritten).with_context(|| "Failed to write redis.conf")?;
 
         Ok(ConfiguredPaths {
             config_path: conf_path,
@@ -248,25 +308,6 @@ mod imp {
         utils::ensure_dir(&logs_dir)?;
         let log_file = logs_dir.join("mongod.log");
         let conf_path = prefix.join("etc").join("mongod.conf");
-
-        Ok(ConfiguredPaths {
-            config_path: conf_path,
-            log_path: log_file,
-        })
-    }
-
-    fn configure_neo4j(
-        brew: &Homebrew,
-        storage_path: &Path,
-        _port: u16,
-    ) -> Result<ConfiguredPaths> {
-        let prefix = brew.prefix(Some("neo4j"))?;
-        let data_dir = utils::get_db_data_path(storage_path, "neo4j");
-        let logs_dir = utils::get_db_log_path(storage_path, "neo4j");
-        utils::ensure_dir(&data_dir)?;
-        utils::ensure_dir(&logs_dir)?;
-        let log_file = logs_dir.join("neo4j.log");
-        let conf_path = prefix.join("etc").join("neo4j.conf");
 
         Ok(ConfiguredPaths {
             config_path: conf_path,
@@ -475,6 +516,18 @@ mod imp {
             let _ = self.stop_service(service);
             self.start_service(service)
         }
+
+        fn get_service_status(&self, service: &str) -> Result<bool> {
+            let output = Command::new(&self.bin_path)
+                .args(["services", "list"])
+                .output()
+                .with_context(|| "Failed to list brew services")?;
+            if !output.status.success() {
+                bail!("Failed to list brew services");
+            }
+            let output_text = String::from_utf8_lossy(&output.stdout);
+            Ok(output_text.contains(service) && output_text.contains("started"))
+        }
     }
 
     struct HomebrewDatabaseRecipe {
@@ -515,13 +568,6 @@ mod imp {
                     formula: "mongodb-community@7.0",
                     service_name: "mongodb-community@7.0",
                     port: 27017,
-                }),
-                DatabaseType::Neo4j => Ok(Self {
-                    db_type: DatabaseType::Neo4j,
-                    tap: None,
-                    formula: "neo4j",
-                    service_name: "neo4j",
-                    port: 7474,
                 }),
                 DatabaseType::Qdrant => Ok(Self {
                     db_type: DatabaseType::Qdrant,
@@ -577,11 +623,6 @@ mod imp {
     }
 }
 
-#[cfg(target_os = "macos")]
-pub use imp::{
-    install_database_via_homebrew, start_service_for_database, stop_service_for_database,
-};
-
 #[cfg(not(target_os = "macos"))]
 mod imp {
     use super::*;
@@ -603,9 +644,26 @@ mod imp {
     pub fn stop_service_for_database(_db_info: &DatabaseInfo) -> Result<()> {
         bail!("Homebrew workflow is only available on macOS");
     }
+
+    pub fn get_installed_databases_from_homebrew() -> Vec<DatabaseType> {
+        Vec::new()
+    }
+
+    pub fn get_homebrew_service_status(_service: &str) -> Option<bool> {
+        None
+    }
 }
 
+// macOS 导出
+#[cfg(target_os = "macos")]
+pub use imp::{
+    get_homebrew_service_status, get_installed_databases_from_homebrew,
+    install_database_via_homebrew, start_service_for_database, stop_service_for_database,
+};
+
+// 非 macOS 导出
 #[cfg(not(target_os = "macos"))]
 pub use imp::{
+    get_homebrew_service_status, get_installed_databases_from_homebrew,
     install_database_via_homebrew, start_service_for_database, stop_service_for_database,
 };

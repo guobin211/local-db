@@ -9,7 +9,10 @@
       "Bash(cargo check:*)",
       "Bash(pnpm tauri dev:*)",
       "Bash(lsof:*)",
-      "Bash(xargs kill -9)"
+      "Bash(xargs kill -9)",
+      "Bash(/homebrew/brew/brew services list:*)",
+      "Bash(pnpm install:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

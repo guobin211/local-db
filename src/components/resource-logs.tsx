@@ -105,7 +105,6 @@ export const ResourceLogs: React.FC = () => {
             <select className="dark:bg-card-dark dark:border-border-dark focus:ring-primary focus:border-primary h-10 appearance-none rounded-lg border border-gray-200 bg-white px-4 pr-10 text-sm font-bold text-slate-900 transition-all focus:ring-1 dark:text-white">
               <option>MongoDB (Running)</option>
               <option>Redis (Running)</option>
-              <option>Neo4j (Stopped)</option>
             </select>
             <FiChevronDown
               size={20}

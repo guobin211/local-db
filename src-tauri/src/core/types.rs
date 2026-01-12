@@ -10,7 +10,6 @@ pub enum DatabaseType {
     MongoDB,
     Redis,
     Qdrant,
-    Neo4j,
     SeekDB,
     SurrealDB,
 }
@@ -23,7 +22,6 @@ impl DatabaseType {
             DatabaseType::MongoDB => "mongodb",
             DatabaseType::Redis => "redis",
             DatabaseType::Qdrant => "qdrant",
-            DatabaseType::Neo4j => "neo4j",
             DatabaseType::SeekDB => "seekdb",
             DatabaseType::SurrealDB => "surrealdb",
         }
@@ -36,7 +34,6 @@ impl DatabaseType {
             DatabaseType::MongoDB => "MongoDB",
             DatabaseType::Redis => "Redis",
             DatabaseType::Qdrant => "Qdrant",
-            DatabaseType::Neo4j => "Neo4j",
             DatabaseType::SeekDB => "SeekDB",
             DatabaseType::SurrealDB => "SurrealDB",
         }
@@ -49,7 +46,6 @@ impl DatabaseType {
             DatabaseType::MongoDB => 27017,
             DatabaseType::Redis => 6379,
             DatabaseType::Qdrant => 6333,
-            DatabaseType::Neo4j => 7474,
             DatabaseType::SeekDB => 8080,
             DatabaseType::SurrealDB => 8000,
         }
@@ -171,4 +167,28 @@ impl<T> OperationResult<T> {
             data: None,
         }
     }
+}
+
+/// 任务状态枚举
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+}
+
+/// 异步任务信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsyncTask {
+    pub id: String,
+    pub task_type: String,
+    pub db_type: String,
+    pub status: TaskStatus,
+    pub progress: u8,
+    pub message: String,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }

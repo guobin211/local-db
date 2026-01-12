@@ -1,10 +1,26 @@
 import { invoke } from '@tauri-apps/api/core';
 
 // 数据库类型
-export type DatabaseType = 'mysql' | 'postgresql' | 'mongodb' | 'redis' | 'qdrant' | 'neo4j' | 'seekdb' | 'surrealdb';
+export type DatabaseType = 'mysql' | 'postgresql' | 'mongodb' | 'redis' | 'qdrant' | 'seekdb' | 'surrealdb';
 
 // 数据库状态
 export type DatabaseStatus = 'running' | 'stopped' | 'notinstalled';
+
+// 任务状态
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+// 异步任务信息接口
+export interface AsyncTask {
+  id: string;
+  task_type: string;
+  db_type: string;
+  status: TaskStatus;
+  progress: number;
+  message: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 // 数据库信息接口
 export interface DatabaseInfo {
@@ -82,9 +98,14 @@ export async function deleteDatabase(id: string, withData: boolean = false): Pro
   return invoke('delete_database', { id, withData });
 }
 
-// 安装数据库
-export async function installDatabase(params: InstallDatabaseParams): Promise<OperationResult<DatabaseInfo>> {
+// 安装数据库（异步，返回任务ID）
+export async function installDatabase(params: InstallDatabaseParams): Promise<string> {
   return invoke('install_database', { params });
+}
+
+// 获取任务状态（用于轮询）
+export async function getTaskStatus(taskId: string): Promise<AsyncTask | null> {
+  return invoke('get_task_status', { taskId });
 }
 
 // 更新数据库自启动设置

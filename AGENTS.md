@@ -38,6 +38,34 @@ pnpm fmt:rs           # Format Rust with cargo fmt
 - No test commands currently available
 - Test files should follow naming: `*.test.ts` or `*.spec.ts`
 
+### Build Verification (IMPORTANT FOR AGENTS)
+
+🚫 **NEVER use `tauri build` for testing** - Use these lightweight verification commands instead:
+
+```bash
+# Rust backend check only (fast)
+cd src-tauri && cargo check
+
+# Frontend build only (fast)
+pnpm build
+
+# Combined verification (recommended for agents)
+cd src-tauri && cargo check && pnpm build
+```
+
+**Why not `tauri build`?**
+
+- Full Tauri build takes 5-10+ minutes per platform
+- Requires platform-specific dependencies
+- Only needed for release preparation, not development/testing
+- Use CI/CD workflow for actual cross-platform builds
+
+**When to use `tauri build`:**
+
+- Preparing for production release
+- Testing native bundler behavior
+- Only when explicitly requested by user
+
 ## Code Style Guidelines
 
 ### TypeScript Configuration

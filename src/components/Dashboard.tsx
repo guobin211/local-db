@@ -20,7 +20,6 @@ const dbIcons: Record<string, string> = {
   mongodb: '🍃',
   redis: '◆',
   qdrant: '🔍',
-  neo4j: '⋈',
   seekdb: '📊',
   surrealdb: '🌐'
 };

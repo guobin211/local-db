@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FiGrid,
   FiZap,
-  FiGitBranch,
   FiShare2,
   FiRepeat,
   FiList,
   FiAlertTriangle,
   FiChevronLeft,
   FiChevronRight,
-  FiTrash2
+  FiTrash2,
+  FiLoader,
+  FiCheck,
 } from 'react-icons/fi';
 import { DBInstance, DBStatus } from '../types';
 import {
@@ -18,8 +19,18 @@ import {
   stopDatabase,
   deleteDatabase,
   installDatabase,
-  DatabaseInfo
+  getTaskStatus,
+  DatabaseInfo,
+  AsyncTask,
 } from '../command/database';
+
+// Task status enum for runtime comparison
+const TaskStatus = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
 
 // 支持的数据库类型列表（用于安装未安装的数据库）
 const SUPPORTED_DATABASES = [
@@ -27,7 +38,6 @@ const SUPPORTED_DATABASES = [
   { type: 'postgresql', name: 'PostgreSQL', icon: 'grid_view', colorClass: 'text-blue-600 bg-blue-600/10' },
   { type: 'mongodb', name: 'MongoDB', icon: 'grid_view', colorClass: 'text-green-500 bg-green-500/10' },
   { type: 'redis', name: 'Redis', icon: 'bolt', colorClass: 'text-red-500 bg-red-500/10' },
-  { type: 'neo4j', name: 'Neo4j', icon: 'account_tree', colorClass: 'text-blue-500 bg-blue-500/10' },
   { type: 'qdrant', name: 'Qdrant', icon: 'hub', colorClass: 'text-indigo-500 bg-indigo-500/10' },
   { type: 'surrealdb', name: 'SurrealDB', icon: 'all_inclusive', colorClass: 'text-orange-500 bg-orange-500/10' },
   { type: 'seekdb', name: 'SeekDB', icon: 'table_rows', colorClass: 'text-slate-400 bg-slate-400/10' }
@@ -39,8 +49,6 @@ const getIconComponent = (iconName: string) => {
       return FiGrid;
     case 'bolt':
       return FiZap;
-    case 'account_tree':
-      return FiGitBranch;
     case 'hub':
       return FiShare2;
     case 'all_inclusive':
@@ -56,7 +64,18 @@ interface InstancesViewProps {}
 
 export const InstancesView: React.FC<InstancesViewProps> = () => {
   const [databases, setDatabases] = useState<DBInstance[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null); // Track which db type is loading
+  const [installTask, setInstallTask] = useState<AsyncTask | null>(null);
+  const pollingRef = useRef<number | null>(null);
+
+  // Clear polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
 
   // 将 DatabaseInfo 转换为 DBInstance
   const convertToDBInstance = (dbInfo: DatabaseInfo): DBInstance => {
@@ -107,24 +126,38 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     return found || { name: dbType, icon: 'grid_view', colorClass: 'text-gray-500 bg-gray-500/10', type: dbType };
   };
 
-  // 处理安装数据库
+  // 处理安装数据库（异步）
   const handleInstall = async (dbType: string) => {
-    setLoading(true);
+    setLoading(dbType);
     try {
-      const result = await installDatabase({ db_type: dbType });
-      if (result.success) {
-        await loadDatabases();
-      }
+      const taskId = await installDatabase({ db_type: dbType });
+      // Start polling for task status
+      const interval = setInterval(async () => {
+        const task = await getTaskStatus(taskId);
+        if (!task) {
+          clearInterval(interval);
+          return;
+        }
+
+        setInstallTask(task);
+
+        // Task completed or failed
+        if (task.status === TaskStatus.COMPLETED || task.status === TaskStatus.FAILED) {
+          clearInterval(interval);
+          setLoading(null);
+          await loadDatabases();
+          setTimeout(() => setInstallTask(null), 3000); // Clear task after 3 seconds
+        }
+      }, 1000);
     } catch (error) {
       console.error('Failed to install database:', error);
-    } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
   // 处理启动数据库
   const handleStart = async (id: string, name: string) => {
-    setLoading(true);
+    setLoading('starting');
     try {
       const result = await startDatabase(id);
       if (result.success) {
@@ -135,13 +168,13 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     } catch (error) {
       console.error('Failed to start database:', error);
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
   // 处理停止数据库
   const handleStop = async (id: string, name: string) => {
-    setLoading(true);
+    setLoading('stopping');
     try {
       const result = await stopDatabase(id);
       if (result.success) {
@@ -152,7 +185,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     } catch (error) {
       console.error('Failed to stop database:', error);
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
@@ -162,7 +195,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
       return;
     }
 
-    setLoading(true);
+    setLoading('deleting');
     try {
       const result = await deleteDatabase(id, false);
       if (result.success) {
@@ -173,8 +206,13 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     } catch (error) {
       console.error('Failed to delete database:', error);
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
+  };
+
+  // Helper to get disabled prop value
+  const getDisabledValue = (isLoading: boolean): boolean | undefined => {
+    return isLoading ? true : undefined;
   };
 
   // 合并已安装的数据库和未安装的数据库
@@ -281,14 +319,14 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                         <>
                           <button
                             onClick={() => handleStop(db.id, db.name)}
-                            disabled={loading}
+                            disabled={getDisabledValue(!!loading)}
                             className="rounded-lg border border-red-500/30 px-4 py-1.5 text-[11px] font-bold tracking-wider text-red-500 uppercase transition-all hover:bg-red-500/10 disabled:opacity-50"
                           >
                             Stop
                           </button>
                           <button
                             onClick={() => handleDelete(db.id, db.name)}
-                            disabled={loading}
+                            disabled={getDisabledValue(!!loading)}
                             className="rounded-lg border border-slate-300 px-2 py-1.5 text-slate-500 transition-all hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
                           >
                             <FiTrash2 size={14} />
@@ -298,27 +336,46 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                         <>
                           <button
                             onClick={() => handleStart(db.id, db.name)}
-                            disabled={loading}
+                            disabled={getDisabledValue(!!loading)}
                             className="bg-primary hover:bg-primary/90 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all disabled:opacity-50"
                           >
                             Start
                           </button>
                           <button
                             onClick={() => handleDelete(db.id, db.name)}
-                            disabled={loading}
+                            disabled={getDisabledValue(!!loading)}
                             className="rounded-lg border border-slate-300 px-2 py-1.5 text-slate-500 transition-all hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
                           >
                             <FiTrash2 size={14} />
                           </button>
                         </>
                       ) : (
-                        <button
-                          onClick={() => handleInstall(db.type)}
-                          disabled={loading}
-                          className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
-                        >
-                          Install
-                        </button>
+                        // Show loading state for install button
+                        installTask?.db_type === db.type && installTask.status !== TaskStatus.COMPLETED ? (
+                          <button
+                            disabled={true}
+                            className="bg-primary/80 cursor-not-allowed shadow-primary/20 flex items-center gap-2 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
+                          >
+                            <FiLoader size={14} className="animate-spin" />
+                            {installTask.status === TaskStatus.FAILED ? 'Failed' : `${installTask.progress}%`}
+                          </button>
+                        ) : installTask?.db_type === db.type && installTask.status === TaskStatus.COMPLETED ? (
+                          <button
+                            disabled={true}
+                            className="bg-green-600 flex items-center gap-2 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
+                          >
+                            <FiCheck size={14} />
+                            Done
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleInstall(db.type)}
+                            disabled={!!loading}
+                            className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
+                          >
+                            Install
+                          </button>
+                        )
                       )}
                     </div>
                   </td>

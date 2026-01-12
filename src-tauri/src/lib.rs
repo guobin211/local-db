@@ -51,6 +51,7 @@ pub fn run() {
             command::delete_database,
             command::install_database,
             command::update_database_autostart,
+            command::get_task_status,
             // 设置命令
             command::get_settings,
             command::update_settings,

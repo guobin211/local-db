@@ -7,7 +7,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
-
+  build: {
+    chunkSizeWarningLimit: 1024
+  },
   clearScreen: false,
   server: {
     port: 1420,

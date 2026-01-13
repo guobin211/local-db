@@ -25,7 +25,7 @@
   "plugins": {
     "updater": {
       "endpoints": ["https://github.com/guobin211/local-db/releases/latest/download/latest.json"],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3QjkxMzgyMEFCNDZENzcKUldSM2JiUUtnaE81dDliRityTi9PMzJsaTZXMElnQ3BxbjI3S3lGNXlKbkExa20rbEJWQzVPYkkK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhDQ0JCMTJCQTU3NjZBQ0YKUldUUGFuYWxLN0hMakNheHJtbDB5SndhaTBMM2NvZk8raXdONHlYN2t0NE9TSkVic1RZTUYxVXEK"
     }
   },
   "bundle": {

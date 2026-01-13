@@ -8,7 +8,7 @@ local-db 是一个跨平台的数据库管理工具，旨在简化本地开发�
 
 ### 1.2 核心特性
 
-- **多数据库支持**：MySQL、PostgreSQL、MongoDB、Redis、Qdrant、Neo4j、SeekDB、SurrealDB
+- **多数据库支持**：MySQL、PostgreSQL、MongoDB、Redis、Qdrant、SurrealDB
 - **跨平台兼容**：Windows、macOS、Linux
 - **GUI操作**：图形化界面（GUI）
 - **统一管理**：集中式的数据库安装、配置、启停、备份管理

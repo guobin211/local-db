@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "fmt": "pnpm fmt:js && pnpm fmt:rs",
     "fmt:js": "prettier -w . --log-level warn",
-    "fmt:rs": "cd src-tauri && cargo fmt --all"
+    "fmt:rs": "cd src-tauri && cargo fmt --all",
+    "lint": "cd src-tauri && cargo clippy --all --fix --allow-dirty --allow-staged"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -23,7 +24,6 @@
     "@tauri-apps/plugin-positioner": "~2.3.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "~2.9.0",
-    "canvas": "^3.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-icons": "^5.5.0",

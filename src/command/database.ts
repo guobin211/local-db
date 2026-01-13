@@ -26,20 +26,22 @@ export interface AsyncTask {
 export interface DatabaseInfo {
   id: string;
   name: string;
-  type: DatabaseType;
-  version: string;
-  install_path: string;
-  data_path: string;
-  log_path: string;
-  port: number;
+  type: string;
+  version?: string;
+  install_path?: string;
+  data_path?: string;
+  log_path?: string;
+  port?: number;
   username?: string;
   password?: string;
   config?: string;
-  status: DatabaseStatus;
-  auto_start: boolean;
+  status?: DatabaseStatus;
+  auto_start?: boolean;
   pid?: number;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
+  icon?: string;
+  meta?: string;
 }
 
 // 操作结果接口
@@ -111,4 +113,10 @@ export async function getTaskStatus(taskId: string): Promise<AsyncTask | null> {
 // 更新数据库自启动设置
 export async function updateDatabaseAutostart(id: string, autoStart: boolean): Promise<OperationResult> {
   return invoke('update_database_autostart', { id, autoStart });
+}
+
+// 同步所有数据库的运行状态
+// 此函数用于在页面加载完成后调用，检查并更新所有数据库的实际运行状态
+export async function syncDatabasesStatus(): Promise<DatabaseInfo[]> {
+  return invoke('sync_databases_status');
 }

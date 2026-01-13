@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts';
+import React, { useEffect, useState } from 'react';
 import {
-  FiDatabase,
-  FiPlayCircle,
-  FiStopCircle,
-  FiCpu,
-  FiHardDrive,
-  FiUploadCloud,
   FiArrowRight,
-  FiRefreshCw
+  FiCpu,
+  FiDatabase,
+  FiHardDrive,
+  FiPlayCircle,
+  FiRefreshCw,
+  FiStopCircle,
+  FiUploadCloud
 } from 'react-icons/fi';
+import { Bar, BarChart, Cell, ResponsiveContainer } from 'recharts';
+import { DatabaseInfo, getDatabases, getSystemInfo, SystemInfo } from '../command';
 import { ViewType } from '../types';
-import { getDatabases, DatabaseInfo, getSystemInfo, SystemInfo } from '../command';
 
 // 数据库图标映射
 const dbIcons: Record<string, string> = {
@@ -97,13 +97,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onViewChange }) => {
 
   // 获取最近使用的数据库（最多显示3个）
   const recentInstances = databases
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    .sort((a, b) => new Date(b.updated_at || '').getTime() - new Date(a.updated_at || '').getTime())
     .slice(0, 3);
 
   const formatUptime = (db: DatabaseInfo): string => {
     if (db.status !== 'running') return '-';
 
-    const startTime = new Date(db.updated_at);
+    const startTime = new Date(db.updated_at || '');
     const now = new Date();
     const diffMs = now.getTime() - startTime.getTime();
 

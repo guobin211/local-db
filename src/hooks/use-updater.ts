@@ -23,7 +23,7 @@ export const useUpdater = () => {
 
       const update = await check();
 
-      if (update && update.available) {
+      if (update) {
         setUpdateInfo({
           available: true,
           currentVersion: update.currentVersion,

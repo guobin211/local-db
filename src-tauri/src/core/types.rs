@@ -10,7 +10,6 @@ pub enum DatabaseType {
     MongoDB,
     Redis,
     Qdrant,
-    SeekDB,
     SurrealDB,
 }
 
@@ -22,7 +21,6 @@ impl DatabaseType {
             DatabaseType::MongoDB => "mongodb",
             DatabaseType::Redis => "redis",
             DatabaseType::Qdrant => "qdrant",
-            DatabaseType::SeekDB => "seekdb",
             DatabaseType::SurrealDB => "surrealdb",
         }
     }
@@ -34,7 +32,6 @@ impl DatabaseType {
             DatabaseType::MongoDB => "MongoDB",
             DatabaseType::Redis => "Redis",
             DatabaseType::Qdrant => "Qdrant",
-            DatabaseType::SeekDB => "SeekDB",
             DatabaseType::SurrealDB => "SurrealDB",
         }
     }
@@ -46,7 +43,6 @@ impl DatabaseType {
             DatabaseType::MongoDB => 27017,
             DatabaseType::Redis => 6379,
             DatabaseType::Qdrant => 6333,
-            DatabaseType::SeekDB => 8080,
             DatabaseType::SurrealDB => 8000,
         }
     }

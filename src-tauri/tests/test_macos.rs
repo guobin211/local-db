@@ -8,57 +8,43 @@ const HOMEBREW_INSTALL_SCRIPT: &str =
 
 #[derive(Clone, Copy)]
 struct BrewDatabase {
-    name: &'static str,
     tap: Option<&'static str>,
     formula: &'static str,
     service: &'static str,
 }
 
 const MONGODB: BrewDatabase = BrewDatabase {
-    name: "MongoDB",
     tap: Some("mongodb/brew"),
     formula: "mongodb-community@7.0",
     service: "mongodb-community@7.0",
 };
 
 const MYSQL: BrewDatabase = BrewDatabase {
-    name: "MySQL",
     tap: None,
-    formula: "mysql",
-    service: "mysql",
+    formula: "mysql@8.4",
+    service: "mysql@8.4",
 };
 
 const REDIS: BrewDatabase = BrewDatabase {
-    name: "Redis",
     tap: None,
     formula: "redis",
     service: "redis",
 };
 
-const NEO4J: BrewDatabase = BrewDatabase {
-    name: "Neo4j",
+const POSTGRESQL: BrewDatabase = BrewDatabase {
     tap: None,
-    formula: "neo4j",
-    service: "neo4j",
+    formula: "postgresql@18",
+    service: "postgresql@18",
 };
 
 const QDRANT: BrewDatabase = BrewDatabase {
-    name: "Qdrant",
     tap: None,
     formula: "qdrant",
     service: "qdrant",
 };
 
-const SEEKDB: BrewDatabase = BrewDatabase {
-    name: "SeekDB",
-    tap: Some("seekdb/tap/seekdb"),
-    formula: "seekdb",
-    service: "seekdb",
-};
-
 const SURREALDB: BrewDatabase = BrewDatabase {
-    name: "SurrealDB",
-    tap: Some("surrealdb/tap/surreal"),
+    tap: Some("surrealdb/tap"),
     formula: "surreal",
     service: "surreal",
 };
@@ -184,20 +170,17 @@ define_install_test!(
     REDIS,
     "Requires Homebrew formula redis"
 );
+
 define_install_test!(
-    test_install_neo4j_via_homebrew,
-    NEO4J,
-    "Requires Homebrew formula neo4j"
+    test_install_postgresql_via_homebrew,
+    POSTGRESQL,
+    "Requires Homebrew formula postgresql@18"
 );
+
 define_install_test!(
     test_install_qdrant_via_homebrew,
     QDRANT,
     "Requires Homebrew formula qdrant"
-);
-define_install_test!(
-    test_install_seekdb_via_homebrew,
-    SEEKDB,
-    "Requires SeekDB Homebrew tap"
 );
 define_install_test!(
     test_install_surrealdb_via_homebrew,
@@ -221,19 +204,14 @@ define_service_test!(
     "Requires Redis Homebrew service support"
 );
 define_service_test!(
-    test_start_neo4j_via_homebrew,
-    NEO4J,
-    "Requires Neo4j Homebrew service support"
+    test_start_postgresql_via_homebrew,
+    POSTGRESQL,
+    "Requires PostgreSQL Homebrew service support"
 );
 define_service_test!(
     test_start_qdrant_via_homebrew,
     QDRANT,
     "Requires Qdrant Homebrew service support"
-);
-define_service_test!(
-    test_start_seekdb_via_homebrew,
-    SEEKDB,
-    "Requires SeekDB Homebrew service support"
 );
 define_service_test!(
     test_start_surrealdb_via_homebrew,

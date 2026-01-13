@@ -1,5 +1,6 @@
 use crate::core::{utils, DatabaseInfo, DatabaseStatus, DatabaseType};
 use anyhow::Result;
+use reqwest::blocking::get;
 
 /// Options used when installing a database via Homebrew.
 pub struct HomebrewInstallOptions<'a> {
@@ -44,8 +45,6 @@ mod imp {
                 ("mysql", DatabaseType::MySQL),
                 ("postgresql", DatabaseType::PostgreSQL),
                 ("mongodb-community@7.0", DatabaseType::MongoDB),
-                ("qdrant", DatabaseType::Qdrant),
-                ("seekdb", DatabaseType::SeekDB),
                 ("surreal", DatabaseType::SurrealDB),
             ];
 
@@ -70,16 +69,62 @@ mod imp {
         }
     }
 
+    /// 获取所有 Homebrew 服务的运行状态（一次性调用）
+    /// 返回 HashMap<服务名, 是否运行>
+    pub fn get_all_homebrew_services_status() -> std::collections::HashMap<String, bool> {
+        let mut result = std::collections::HashMap::new();
+
+        if let Ok(brew) = Homebrew::bootstrap() {
+            if let Ok(output) = brew.list_services() {
+                // 解析 brew services list 的输出
+                // 输出格式示例：
+                // Name              Status       User File
+                // mongodb-community none
+                // mysql@8.4         started      guobin ~/Library/LaunchAgents/homebrew.mxcl.mysql@8.4.plist
+                // postgresql@18     stopped
+                // redis             started      guobin ~/Library/LaunchAgents/homebrew.mxcl.redis.plist
+                for line in output.lines().skip(1) {
+                    // 跳过标题行
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let service_name = parts[0].to_string();
+                        let status = parts[1];
+                        let is_running = status == "started";
+                        result.insert(service_name, is_running);
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
     pub fn install_database_via_homebrew(
         db_type: &DatabaseType,
         storage_path: &Path,
         options: &HomebrewInstallOptions<'_>,
     ) -> Result<DatabaseInfo> {
+        // Qdrant 使用二进制安装，不通过 Homebrew
+        if *db_type == DatabaseType::Qdrant {
+            return install_qdrant_binary(storage_path, options);
+        }
+
+        // SurrealDB 通过 Homebrew 安装，但使用直接进程启动
+        if *db_type == DatabaseType::SurrealDB {
+            return install_surrealdb_via_homebrew(storage_path, options);
+        }
+
         let brew = Homebrew::bootstrap()?;
         let recipe = HomebrewDatabaseRecipe::resolve(db_type)?;
 
-        brew.ensure_formula(recipe.tap, recipe.formula)?;
+        // 检查是否已安装，如果已安装则跳过安装步骤
+        let already_installed = brew.is_formula_installed(recipe.formula)?;
+        if !already_installed {
+            // 未安装，执行安装
+            brew.ensure_formula(recipe.tap, recipe.formula)?;
+        }
 
+        // 继续配置流程（无论是否已安装都需要确保配置正确）
         let configured = configure_database(
             db_type,
             &brew,
@@ -111,7 +156,7 @@ mod imp {
             log_path: configured.log_path.to_string_lossy().to_string(),
             port: options.port.unwrap_or(recipe.port),
             username: resolve_username(db_type, options.username),
-            password: options.password.map(|s| s.to_string()),
+            password: resolve_password(db_type, options.password),
             config: Some(configured.config_path.to_string_lossy().to_string()),
             status,
             auto_start: options.auto_start,
@@ -121,13 +166,505 @@ mod imp {
         })
     }
 
+    /// 通过 Homebrew 安装 SurrealDB，但使用直接进程启动
+    fn install_surrealdb_via_homebrew(
+        storage_path: &Path,
+        options: &HomebrewInstallOptions<'_>,
+    ) -> Result<DatabaseInfo> {
+        let brew = Homebrew::bootstrap()?;
+        let tap = Some("surrealdb/tap");
+        let formula = "surreal";
+        let default_port = 8000u16;
+
+        // 检查是否已安装，如果已安装则跳过安装步骤
+        let already_installed = brew.is_formula_installed(formula)?;
+        if !already_installed {
+            brew.ensure_formula(tap, formula)?;
+        }
+
+        // 配置 SurrealDB
+        let port = options.port.unwrap_or(default_port);
+        let configured = configure_surrealdb(&brew, storage_path, port)?;
+        let data_path = utils::get_db_data_path(storage_path, "surrealdb");
+        let install_prefix = brew.prefix(Some(formula))?;
+
+        let version = brew
+            .formula_version(formula)?
+            .or_else(|| options.version.map(|v| v.to_string()))
+            .unwrap_or_else(|| "latest".to_string());
+
+        // 创建 DatabaseInfo
+        let mut db_info = DatabaseInfo {
+            id: utils::generate_id(),
+            name: DatabaseType::SurrealDB.display_name().to_string(),
+            db_type: DatabaseType::SurrealDB,
+            version,
+            install_path: install_prefix.to_string_lossy().to_string(),
+            data_path: data_path.to_string_lossy().to_string(),
+            log_path: configured.log_path.to_string_lossy().to_string(),
+            port,
+            username: resolve_username(&DatabaseType::SurrealDB, options.username),
+            password: resolve_password(&DatabaseType::SurrealDB, options.password),
+            config: Some(configured.config_path.to_string_lossy().to_string()),
+            status: DatabaseStatus::Stopped,
+            auto_start: options.auto_start,
+            pid: None,
+            created_at: utils::get_timestamp(),
+            updated_at: utils::get_timestamp(),
+        };
+
+        // 如果需要自动启动，使用直接进程启动
+        if options.auto_start {
+            if let Err(e) = start_surrealdb_process(&db_info) {
+                eprintln!("Warning: Failed to start SurrealDB: {}", e);
+            } else {
+                db_info.status = DatabaseStatus::Running;
+            }
+        }
+
+        Ok(db_info)
+    }
+
+    /// 获取当前系统架构对应的 Qdrant 二进制文件名
+    fn get_qdrant_binary_name() -> &'static str {
+        #[cfg(target_arch = "aarch64")]
+        {
+            "qdrant-aarch64-apple-darwin.tar.gz"
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            "qdrant-x86_64-apple-darwin.tar.gz"
+        }
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+        {
+            compile_error!("Unsupported architecture for Qdrant")
+        }
+    }
+
+    /// 构建 Qdrant 下载 URL
+    fn get_qdrant_download_url(version: Option<&str>) -> String {
+        let binary_name = get_qdrant_binary_name();
+        match version {
+            Some(v) => {
+                let ver = if v.starts_with('v') {
+                    v.to_string()
+                } else {
+                    format!("v{}", v)
+                };
+                format!(
+                    "https://github.com/qdrant/qdrant/releases/download/{}/{}",
+                    ver, binary_name
+                )
+            }
+            None => format!(
+                "https://github.com/qdrant/qdrant/releases/latest/download/{}",
+                binary_name
+            ),
+        }
+    }
+
+    /// 安装 Qdrant 二进制文件
+    fn install_qdrant_binary(
+        storage_path: &Path,
+        options: &HomebrewInstallOptions<'_>,
+    ) -> Result<DatabaseInfo> {
+        let bin_dir = utils::get_db_bin_path(storage_path, "qdrant");
+        utils::ensure_dir(&bin_dir)?;
+
+        let data_dir = utils::get_db_data_path(storage_path, "qdrant");
+        let logs_dir = utils::get_db_log_path(storage_path, "qdrant");
+        let config_dir = utils::get_db_config_path(storage_path, "qdrant");
+        utils::ensure_dir(&data_dir)?;
+        utils::ensure_dir(&logs_dir)?;
+        utils::ensure_dir(&config_dir)?;
+
+        let log_file = logs_dir.join("qdrant.log");
+        let config_path = config_dir.join("config.yaml");
+        let binary_path = bin_dir.join("qdrant");
+
+        // 下载 Qdrant 二进制文件 (tar.gz 格式)
+        let binary_url = get_qdrant_download_url(options.version);
+
+        if !binary_path.exists() {
+            eprintln!("Downloading Qdrant from {}...", binary_url);
+            let response = get(&binary_url).context("Failed to fetch Qdrant archive")?;
+
+            if !response.status().is_success() {
+                bail!(
+                    "Failed to download Qdrant archive: HTTP {}",
+                    response.status()
+                );
+            }
+
+            let bytes = response.bytes().context("Failed to read Qdrant archive")?;
+
+            // 解压 tar.gz 文件
+            eprintln!("Extracting Qdrant binary...");
+            let tar_gz = std::io::Cursor::new(bytes);
+            let tar = flate2::read::GzDecoder::new(tar_gz);
+            let mut archive = tar::Archive::new(tar);
+
+            // 解压到 bin 目录
+            for entry in archive.entries().context("Failed to read tar entries")? {
+                let mut entry = entry.context("Failed to read tar entry")?;
+                let path = entry.path().context("Failed to get entry path")?;
+
+                // 只提取 qdrant 可执行文件
+                if let Some(file_name) = path.file_name() {
+                    if file_name == "qdrant" {
+                        entry
+                            .unpack(&binary_path)
+                            .context("Failed to extract qdrant binary")?;
+                        break;
+                    }
+                }
+            }
+
+            // 确保二进制文件存在
+            if !binary_path.exists() {
+                bail!("Qdrant binary not found in archive");
+            }
+
+            // 设置可执行权限
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = fs::metadata(&binary_path)
+                    .context("Failed to get binary permissions")?
+                    .permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&binary_path, perms)
+                    .context("Failed to set binary permissions")?;
+            }
+        }
+
+        let port = options.port.unwrap_or(6333);
+        let grpc_port = port + 1; // gRPC port = HTTP port + 1
+
+        // 创建配置文件 (正确的 YAML 格式)
+        let config_content = format!(
+            r#"# Qdrant configuration for local-db
+service:
+  host: 0.0.0.0
+  http_port: {port}
+  grpc_port: {grpc_port}
+
+log_level: INFO
+
+storage:
+  storage_path: {data_path}
+
+telemetry_disabled: true
+"#,
+            port = port,
+            grpc_port = grpc_port,
+            data_path = data_dir.display()
+        );
+        fs::write(&config_path, config_content).context("Failed to write Qdrant config")?;
+
+        // 获取版本号
+        let version = options
+            .version
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "latest".to_string());
+
+        // 如果需要自动启动，启动 Qdrant
+        let status = if options.auto_start {
+            if let Err(e) = start_qdrant_process(&binary_path, &config_path, &data_dir) {
+                eprintln!("Warning: Failed to start Qdrant: {}", e);
+                DatabaseStatus::Stopped
+            } else {
+                DatabaseStatus::Running
+            }
+        } else {
+            DatabaseStatus::Stopped
+        };
+
+        Ok(DatabaseInfo {
+            id: utils::generate_id(),
+            name: "Qdrant".to_string(),
+            db_type: DatabaseType::Qdrant,
+            version,
+            install_path: bin_dir.to_string_lossy().to_string(),
+            data_path: data_dir.to_string_lossy().to_string(),
+            log_path: log_file.to_string_lossy().to_string(),
+            port,
+            username: None,
+            password: options.password.map(|s| s.to_string()),
+            config: Some(config_path.to_string_lossy().to_string()),
+            status,
+            auto_start: options.auto_start,
+            pid: None,
+            created_at: utils::get_timestamp(),
+            updated_at: utils::get_timestamp(),
+        })
+    }
+
+    /// 启动 Qdrant 进程
+    fn start_qdrant_process(binary_path: &Path, config_path: &Path, data_dir: &Path) -> Result<()> {
+        // 检查二进制文件是否存在
+        if !binary_path.exists() {
+            bail!("Qdrant binary not found at {}", binary_path.display());
+        }
+
+        // 检查是否已经在运行
+        let pid_path = data_dir.join("qdrant.pid");
+        if pid_path.exists() {
+            if let Ok(pid_str) = fs::read_to_string(&pid_path) {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    // 检查进程是否存在
+                    #[cfg(unix)]
+                    {
+                        use nix::sys::signal::{kill, Signal};
+                        use nix::unistd::Pid;
+                        if kill(Pid::from_raw(pid), Signal::SIGCONT).is_ok() {
+                            // 进程仍在运行
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            // PID 文件存在但进程不存在，删除旧的 PID 文件
+            let _ = fs::remove_file(&pid_path);
+        }
+
+        // 使用配置文件启动 Qdrant
+        let child = Command::new(binary_path)
+            .arg("--config-path")
+            .arg(config_path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .context("Failed to spawn Qdrant process")?;
+
+        // 保存 PID 以便后续管理
+        fs::write(&pid_path, child.id().to_string()).context("Failed to write PID file")?;
+
+        // 等待一小段时间，确保进程启动
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // 验证进程是否成功启动
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{kill, Signal};
+            use nix::unistd::Pid;
+            if kill(Pid::from_raw(child.id() as i32), Signal::SIGCONT).is_err() {
+                let _ = fs::remove_file(&pid_path);
+                bail!("Qdrant process failed to start");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 停止 Qdrant 进程
+    pub fn stop_qdrant_process(db_info: &DatabaseInfo) -> Result<()> {
+        let data_dir = Path::new(&db_info.data_path);
+        let pid_path = data_dir.join("qdrant.pid");
+
+        if pid_path.exists() {
+            let pid_str = fs::read_to_string(&pid_path)
+                .context("Failed to read PID file")?
+                .trim()
+                .to_string();
+
+            let pid: u32 = pid_str.parse().context("Invalid PID format")?;
+
+            #[cfg(unix)]
+            {
+                // Unix: 使用 SIGTERM
+                use nix::sys::signal::{self, Signal};
+                use nix::unistd::Pid;
+
+                signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM)
+                    .context("Failed to send SIGTERM to Qdrant")?;
+
+                // 等待进程结束
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+
+            #[cfg(windows)]
+            {
+                // Windows: 使用 taskkill
+                Command::new("taskkill")
+                    .arg("/PID")
+                    .arg(&pid_str)
+                    .arg("/F")
+                    .output()
+                    .context("Failed to stop Qdrant process")?;
+            }
+
+            let _ = fs::remove_file(&pid_path);
+        }
+
+        Ok(())
+    }
+
+    /// 启动 SurrealDB 进程
+    fn start_surrealdb_process(db_info: &DatabaseInfo) -> Result<()> {
+        let brew = Homebrew::bootstrap()?;
+        let binary_path = brew.prefix(Some("surreal"))?.join("bin").join("surreal");
+
+        if !binary_path.exists() {
+            bail!("SurrealDB binary not found at {}", binary_path.display());
+        }
+
+        let data_dir = Path::new(&db_info.data_path);
+        let pid_path = data_dir.join("surrealdb.pid");
+
+        // 检查是否已经在运行
+        if pid_path.exists() {
+            if let Ok(pid_str) = fs::read_to_string(&pid_path) {
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    #[cfg(unix)]
+                    {
+                        use nix::sys::signal::{kill, Signal};
+                        use nix::unistd::Pid;
+                        if kill(Pid::from_raw(pid), Signal::SIGCONT).is_ok() {
+                            // 进程仍在运行
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            // PID 文件存在但进程不存在，删除旧的 PID 文件
+            let _ = fs::remove_file(&pid_path);
+        }
+
+        let logs_dir = Path::new(&db_info.log_path).parent().unwrap_or(data_dir);
+        let log_file = logs_dir.join("surrealdb.log");
+
+        // 启动 SurrealDB: surreal start --bind 0.0.0.0:port rocksdb://data_path
+        let child = Command::new(&binary_path)
+            .arg("start")
+            .arg("--bind")
+            .arg(format!("0.0.0.0:{}", db_info.port))
+            .arg("--log")
+            .arg("info")
+            .arg("--user")
+            .arg(db_info.username.as_deref().unwrap_or("admin"))
+            .arg("--pass")
+            .arg(db_info.password.as_deref().unwrap_or("admin888"))
+            .arg(format!("rocksdb://{}", data_dir.display()))
+            .stdin(std::process::Stdio::null())
+            .stdout(
+                fs::File::create(&log_file)
+                    .map(std::process::Stdio::from)
+                    .unwrap_or(std::process::Stdio::null()),
+            )
+            .stderr(
+                fs::File::options()
+                    .append(true)
+                    .open(&log_file)
+                    .map(std::process::Stdio::from)
+                    .unwrap_or(std::process::Stdio::null()),
+            )
+            .spawn()
+            .context("Failed to spawn SurrealDB process")?;
+
+        // 保存 PID
+        fs::write(&pid_path, child.id().to_string()).context("Failed to write PID file")?;
+
+        // 等待一小段时间，确保进程启动
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // 验证进程是否成功启动
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{kill, Signal};
+            use nix::unistd::Pid;
+            if kill(Pid::from_raw(child.id() as i32), Signal::SIGCONT).is_err() {
+                let _ = fs::remove_file(&pid_path);
+                bail!("SurrealDB process failed to start");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 停止 SurrealDB 进程
+    pub fn stop_surrealdb_process(db_info: &DatabaseInfo) -> Result<()> {
+        let data_dir = Path::new(&db_info.data_path);
+        let pid_path = data_dir.join("surrealdb.pid");
+
+        if pid_path.exists() {
+            let pid_str = fs::read_to_string(&pid_path)
+                .context("Failed to read PID file")?
+                .trim()
+                .to_string();
+
+            let pid: u32 = pid_str.parse().context("Invalid PID format")?;
+
+            #[cfg(unix)]
+            {
+                use nix::sys::signal::{self, Signal};
+                use nix::unistd::Pid;
+
+                signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM)
+                    .context("Failed to send SIGTERM to SurrealDB")?;
+
+                // 等待进程结束
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+
+            #[cfg(windows)]
+            {
+                Command::new("taskkill")
+                    .arg("/PID")
+                    .arg(&pid_str)
+                    .arg("/F")
+                    .output()
+                    .context("Failed to stop SurrealDB process")?;
+            }
+
+            let _ = fs::remove_file(&pid_path);
+        }
+
+        Ok(())
+    }
+
     pub fn start_service_for_database(db_info: &DatabaseInfo) -> Result<()> {
+        // Qdrant 使用直接二进制进程管理
+        if db_info.db_type == DatabaseType::Qdrant {
+            let binary_path = Path::new(&db_info.install_path).join("qdrant");
+            let data_dir = Path::new(&db_info.data_path);
+            let config_path = db_info
+                .config
+                .as_ref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    data_dir
+                        .parent()
+                        .unwrap()
+                        .join("config")
+                        .join("qdrant")
+                        .join("config.yaml")
+                });
+            return start_qdrant_process(&binary_path, &config_path, data_dir);
+        }
+
+        // SurrealDB 使用直接二进制进程管理
+        if db_info.db_type == DatabaseType::SurrealDB {
+            return start_surrealdb_process(db_info);
+        }
+
         let brew = Homebrew::bootstrap()?;
         let recipe = HomebrewDatabaseRecipe::resolve(&db_info.db_type)?;
         brew.start_service(recipe.service_name)
     }
 
     pub fn stop_service_for_database(db_info: &DatabaseInfo) -> Result<()> {
+        // Qdrant 使用直接二进制进程管理
+        if db_info.db_type == DatabaseType::Qdrant {
+            return stop_qdrant_process(db_info);
+        }
+
+        // SurrealDB 使用直接二进制进程管理
+        if db_info.db_type == DatabaseType::SurrealDB {
+            return stop_surrealdb_process(db_info);
+        }
+
         let brew = Homebrew::bootstrap()?;
         let recipe = HomebrewDatabaseRecipe::resolve(&db_info.db_type)?;
         brew.stop_service(recipe.service_name)
@@ -150,7 +687,6 @@ mod imp {
             DatabaseType::PostgreSQL => configure_postgresql(brew, storage_path, port),
             DatabaseType::MongoDB => configure_mongodb(brew, storage_path, port),
             DatabaseType::Qdrant => configure_qdrant(brew, storage_path, port),
-            DatabaseType::SeekDB => configure_seekdb(brew, storage_path, port),
             DatabaseType::SurrealDB => configure_surrealdb(brew, storage_path, port),
         }
     }
@@ -215,7 +751,7 @@ mod imp {
     }
 
     fn configure_mysql(brew: &Homebrew, storage_path: &Path, port: u16) -> Result<ConfiguredPaths> {
-        let prefix = brew.prefix(Some("mysql"))?;
+        let prefix = brew.prefix(Some("mysql@8.4"))?;
         let etc_dir = prefix.join("etc");
         utils::ensure_dir(&etc_dir)?;
         let conf_path = etc_dir.join("my.cnf");
@@ -281,19 +817,142 @@ mod imp {
     fn configure_postgresql(
         brew: &Homebrew,
         storage_path: &Path,
-        _port: u16,
+        port: u16,
     ) -> Result<ConfiguredPaths> {
-        let prefix = brew.prefix(Some("postgresql"))?;
+        let prefix = brew.prefix(Some("postgresql@18"))?;
+        let etc_dir = prefix.join("etc");
+        utils::ensure_dir(&etc_dir)?;
+        let conf_path = etc_dir.join("postgresql.conf");
+
         let data_dir = utils::get_db_data_path(storage_path, "postgresql");
         let logs_dir = utils::get_db_log_path(storage_path, "postgresql");
         utils::ensure_dir(&data_dir)?;
         utils::ensure_dir(&logs_dir)?;
         let log_file = logs_dir.join("postgresql.log");
 
+        let user = std::env::var("USER").unwrap_or_else(|_| "local".to_string());
+
+        let config_content = format!(
+            "# PostgreSQL configuration for local-db\n\
+            # Port configuration\n\
+            port = {}\n\
+            \n\
+            # Connection settings\n\
+            listen_addresses = 'localhost'\n\
+            max_connections = 100\n\
+            \n\
+            # Memory settings\n\
+            shared_buffers = 128MB\n\
+            effective_cache_size = 512MB\n\
+            maintenance_work_mem = 32MB\n\
+            checkpoint_completion_target = 0.9\n\
+            wal_buffers = 4MB\n\
+            default_statistics_target = 100\n\
+            random_page_cost = 1.1\n\
+            effective_io_concurrency = 200\n\
+            work_mem = 2621kB\n\
+            min_wal_size = 1GB\n\
+            max_wal_size = 4GB\n\
+            \n\
+            # Logging\n\
+            logging_collector = on\n\
+            log_directory = '{}'\n\
+            log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'\n\
+            log_rotation_age = 1d\n\
+            log_rotation_size = 100MB\n\
+            log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '\n\
+            log_timezone = 'UTC'\n\
+            \n\
+            # Locale and encoding\n\
+            datestyle = 'iso, mdy'\n\
+            timezone = 'UTC'\n\
+            default_text_search_config = 'pg_catalog.english'\n",
+            port,
+            logs_dir.display()
+        );
+        fs::write(&conf_path, config_content).with_context(|| "Failed to write postgresql.conf")?;
+
+        initialize_postgresql_data_dir(&prefix, &data_dir, &user)?;
+
         Ok(ConfiguredPaths {
-            config_path: prefix.join("etc").join("postgresql.conf"),
+            config_path: conf_path,
             log_path: log_file,
         })
+    }
+
+    fn initialize_postgresql_data_dir(prefix: &Path, data_dir: &Path, user: &str) -> Result<()> {
+        let mut entries = fs::read_dir(data_dir)?;
+        if entries.next().is_some() {
+            return Ok(());
+        }
+
+        let initdb_path = prefix.join("bin").join("initdb");
+        if !initdb_path.exists() {
+            bail!("initdb binary not found at {}", initdb_path.display());
+        }
+
+        let output = Command::new(&initdb_path)
+            .arg("-D")
+            .arg(data_dir)
+            .arg(format!("--username={}", user))
+            .arg("--auth-local=trust")
+            .arg("--auth-host=trust")
+            .arg("--encoding=UTF8")
+            .arg("--no-locale")
+            .output()
+            .with_context(|| "Failed to initialize PostgreSQL data directory")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            bail!(
+                "initdb failed: {}\nstdout: {}\nstderr: {}",
+                output.status,
+                stdout,
+                stderr
+            );
+        }
+
+        // Create admin user with default password after initialization
+        // Start PostgreSQL temporarily to create the user
+        let pg_ctl_path = prefix.join("bin").join("pg_ctl");
+        let psql_path = prefix.join("bin").join("psql");
+
+        if pg_ctl_path.exists() && psql_path.exists() {
+            // Start PostgreSQL temporarily
+            let _ = Command::new(&pg_ctl_path)
+                .arg("-D")
+                .arg(data_dir)
+                .arg("-l")
+                .arg(data_dir.join("logfile"))
+                .arg("start")
+                .arg("-w")
+                .status();
+
+            // Wait for PostgreSQL to be ready
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Create admin user with password admin888
+            let _ = Command::new(&psql_path)
+                .arg("-U")
+                .arg(user)
+                .arg("-d")
+                .arg("postgres")
+                .arg("-c")
+                .arg("CREATE ROLE admin WITH LOGIN SUPERUSER CREATEDB CREATEROLE PASSWORD 'admin888';")
+                .status();
+
+            // Stop PostgreSQL (it will be started by brew services later)
+            let _ = Command::new(&pg_ctl_path)
+                .arg("-D")
+                .arg(data_dir)
+                .arg("stop")
+                .arg("-m")
+                .arg("fast")
+                .status();
+        }
+
+        Ok(())
     }
 
     fn configure_mongodb(
@@ -334,37 +993,38 @@ mod imp {
         })
     }
 
-    fn configure_seekdb(
-        brew: &Homebrew,
-        storage_path: &Path,
-        _port: u16,
-    ) -> Result<ConfiguredPaths> {
-        let prefix = brew.prefix(Some("seekdb"))?;
-        let data_dir = utils::get_db_data_path(storage_path, "seekdb");
-        let logs_dir = utils::get_db_log_path(storage_path, "seekdb");
-        utils::ensure_dir(&data_dir)?;
-        utils::ensure_dir(&logs_dir)?;
-        let log_file = logs_dir.join("seekdb.log");
-        let conf_path = prefix.join("etc").join("seekdb.conf");
-
-        Ok(ConfiguredPaths {
-            config_path: conf_path,
-            log_path: log_file,
-        })
-    }
-
     fn configure_surrealdb(
         brew: &Homebrew,
         storage_path: &Path,
-        _port: u16,
+        port: u16,
     ) -> Result<ConfiguredPaths> {
         let prefix = brew.prefix(Some("surreal"))?;
+        let etc_dir = prefix.join("etc");
+        utils::ensure_dir(&etc_dir)?;
+        let conf_path = etc_dir.join("surrealdb.env");
+
         let data_dir = utils::get_db_data_path(storage_path, "surrealdb");
         let logs_dir = utils::get_db_log_path(storage_path, "surrealdb");
         utils::ensure_dir(&data_dir)?;
         utils::ensure_dir(&logs_dir)?;
         let log_file = logs_dir.join("surrealdb.log");
-        let conf_path = prefix.join("etc").join("surrealdb.yaml");
+
+        // SurrealDB 配置 - 创建一个环境变量配置文件用于 launchd
+        let config_content = format!(
+            "# SurrealDB configuration for local-db\n\
+            # Data directory\n\
+            SURREAL_PATH={}\n\
+            # Server bind address\n\
+            SURREAL_BIND=0.0.0.0:{}\n\
+            # Log level\n\
+            SURREAL_LOG=info\n\
+            # Log file\n\
+            SURREAL_LOG_FILE={}\n",
+            data_dir.display(),
+            port,
+            log_file.display()
+        );
+        fs::write(&conf_path, config_content).with_context(|| "Failed to write surrealdb.env")?;
 
         Ok(ConfiguredPaths {
             config_path: conf_path,
@@ -377,9 +1037,18 @@ mod imp {
             return Some(name.to_string());
         }
         match db_type {
-            DatabaseType::MySQL => Some("root".to_string()),
-            DatabaseType::PostgreSQL => Some("postgres".to_string()),
-            _ => None,
+            DatabaseType::Qdrant => None,
+            _ => Some("admin".to_string()),
+        }
+    }
+
+    fn resolve_password(db_type: &DatabaseType, override_password: Option<&str>) -> Option<String> {
+        if let Some(pwd) = override_password {
+            return Some(pwd.to_string());
+        }
+        match db_type {
+            DatabaseType::Qdrant => None,
+            _ => Some("admin888".to_string()),
         }
     }
 
@@ -528,9 +1197,21 @@ mod imp {
             let output_text = String::from_utf8_lossy(&output.stdout);
             Ok(output_text.contains(service) && output_text.contains("started"))
         }
+
+        fn list_services(&self) -> Result<String> {
+            let output = Command::new(&self.bin_path)
+                .args(["services", "list"])
+                .output()
+                .with_context(|| "Failed to list brew services")?;
+            if !output.status.success() {
+                bail!("Failed to list brew services");
+            }
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        }
     }
 
     struct HomebrewDatabaseRecipe {
+        #[allow(dead_code)]
         db_type: DatabaseType,
         tap: Option<&'static str>,
         formula: &'static str,
@@ -551,15 +1232,15 @@ mod imp {
                 DatabaseType::MySQL => Ok(Self {
                     db_type: DatabaseType::MySQL,
                     tap: None,
-                    formula: "mysql",
-                    service_name: "mysql",
+                    formula: "mysql@8.4",
+                    service_name: "mysql@8.4",
                     port: 3306,
                 }),
                 DatabaseType::PostgreSQL => Ok(Self {
                     db_type: DatabaseType::PostgreSQL,
                     tap: None,
-                    formula: "postgresql",
-                    service_name: "postgresql",
+                    formula: "postgresql@18",
+                    service_name: "postgresql@18",
                     port: 5432,
                 }),
                 DatabaseType::MongoDB => Ok(Self {
@@ -569,27 +1250,12 @@ mod imp {
                     service_name: "mongodb-community@7.0",
                     port: 27017,
                 }),
-                DatabaseType::Qdrant => Ok(Self {
-                    db_type: DatabaseType::Qdrant,
-                    tap: None,
-                    formula: "qdrant",
-                    service_name: "qdrant",
-                    port: 6333,
-                }),
-                DatabaseType::SeekDB => Ok(Self {
-                    db_type: DatabaseType::SeekDB,
-                    tap: Some("seekdb/tap/seekdb"),
-                    formula: "seekdb",
-                    service_name: "seekdb",
-                    port: 8080,
-                }),
-                DatabaseType::SurrealDB => Ok(Self {
-                    db_type: DatabaseType::SurrealDB,
-                    tap: Some("surrealdb/tap/surreal"),
-                    formula: "surreal",
-                    service_name: "surreal",
-                    port: 8000,
-                }),
+                DatabaseType::Qdrant => {
+                    bail!("Qdrant should be installed via binary, not Homebrew")
+                }
+                DatabaseType::SurrealDB => {
+                    bail!("SurrealDB should be started via direct process, not brew services")
+                }
             }
         }
     }
@@ -652,18 +1318,23 @@ mod imp {
     pub fn get_homebrew_service_status(_service: &str) -> Option<bool> {
         None
     }
+
+    pub fn get_all_homebrew_services_status() -> std::collections::HashMap<String, bool> {
+        std::collections::HashMap::new()
+    }
 }
 
 // macOS 导出
 #[cfg(target_os = "macos")]
 pub use imp::{
-    get_homebrew_service_status, get_installed_databases_from_homebrew,
-    install_database_via_homebrew, start_service_for_database, stop_service_for_database,
+    get_all_homebrew_services_status,
+    install_database_via_homebrew,
+    start_service_for_database, stop_service_for_database,
 };
 
 // 非 macOS 导出
 #[cfg(not(target_os = "macos"))]
 pub use imp::{
-    get_homebrew_service_status, get_installed_databases_from_homebrew,
-    install_database_via_homebrew, start_service_for_database, stop_service_for_database,
+    get_all_homebrew_services_status, install_database_via_homebrew,
+    start_service_for_database, stop_service_for_database,
 };

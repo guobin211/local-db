@@ -10,9 +10,8 @@ import {
   FiChevronRight,
   FiTrash2,
   FiLoader,
-  FiCheck,
+  FiCheck
 } from 'react-icons/fi';
-import { DBInstance, DBStatus } from '../types';
 import {
   getDatabases,
   startDatabase,
@@ -21,7 +20,7 @@ import {
   installDatabase,
   getTaskStatus,
   DatabaseInfo,
-  AsyncTask,
+  AsyncTask
 } from '../command/database';
 
 // Task status enum for runtime comparison
@@ -29,18 +28,34 @@ const TaskStatus = {
   PENDING: 'pending',
   RUNNING: 'running',
   COMPLETED: 'completed',
-  FAILED: 'failed',
+  FAILED: 'failed'
 } as const;
 
-// 支持的数据库类型列表（用于安装未安装的数据库）
-const SUPPORTED_DATABASES = [
-  { type: 'mysql', name: 'MySQL', icon: 'grid_view', colorClass: 'text-blue-500 bg-blue-500/10' },
-  { type: 'postgresql', name: 'PostgreSQL', icon: 'grid_view', colorClass: 'text-blue-600 bg-blue-600/10' },
-  { type: 'mongodb', name: 'MongoDB', icon: 'grid_view', colorClass: 'text-green-500 bg-green-500/10' },
-  { type: 'redis', name: 'Redis', icon: 'bolt', colorClass: 'text-red-500 bg-red-500/10' },
-  { type: 'qdrant', name: 'Qdrant', icon: 'hub', colorClass: 'text-indigo-500 bg-indigo-500/10' },
-  { type: 'surrealdb', name: 'SurrealDB', icon: 'all_inclusive', colorClass: 'text-orange-500 bg-orange-500/10' },
-  { type: 'seekdb', name: 'SeekDB', icon: 'table_rows', colorClass: 'text-slate-400 bg-slate-400/10' }
+export const SUPPORTED_DATABASES = [
+  { id: 'mysql', type: 'mysql', name: 'MySQL', icon: 'grid_view', colorClass: 'text-blue-500 bg-blue-500/10' },
+  {
+    id: 'postgresql',
+    type: 'postgresql',
+    name: 'PostgreSQL',
+    icon: 'grid_view',
+    colorClass: 'text-blue-600 bg-blue-600/10'
+  },
+  {
+    id: 'mongodb',
+    type: 'mongodb',
+    name: 'MongoDB',
+    icon: 'grid_view',
+    colorClass: 'text-green-500 bg-green-500/10'
+  },
+  { id: 'redis', type: 'redis', name: 'Redis', icon: 'bolt', colorClass: 'text-red-500 bg-red-500/10' },
+  { id: 'qdrant', type: 'qdrant', name: 'Qdrant', icon: 'hub', colorClass: 'text-indigo-500 bg-indigo-500/10' },
+  {
+    id: 'surrealdb',
+    type: 'surrealdb',
+    name: 'SurrealDB',
+    icon: 'all_inclusive',
+    colorClass: 'text-orange-500 bg-orange-500/10'
+  },
 ];
 
 const getIconComponent = (iconName: string) => {
@@ -63,7 +78,7 @@ const getIconComponent = (iconName: string) => {
 interface InstancesViewProps {}
 
 export const InstancesView: React.FC<InstancesViewProps> = () => {
-  const [databases, setDatabases] = useState<DBInstance[]>([]);
+  const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
   const [loading, setLoading] = useState<string | null>(null); // Track which db type is loading
   const [installTask, setInstallTask] = useState<AsyncTask | null>(null);
   const pollingRef = useRef<number | null>(null);
@@ -77,39 +92,12 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     };
   }, []);
 
-  // 将 DatabaseInfo 转换为 DBInstance
-  const convertToDBInstance = (dbInfo: DatabaseInfo): DBInstance => {
-    const displayInfo = getDbDisplayInfo(dbInfo.type);
-
-    // 转换状态
-    let status: DBStatus;
-    if (dbInfo.status === 'running') {
-      status = DBStatus.RUNNING;
-    } else if (dbInfo.status === 'stopped') {
-      status = DBStatus.STOPPED;
-    } else {
-      status = DBStatus.NOT_INSTALLED;
-    }
-
-    return {
-      ...dbInfo,
-      id: dbInfo.id,
-      name: displayInfo.name,
-      version: dbInfo.version,
-      status,
-      port: dbInfo.port.toString(),
-      meta: dbInfo.pid ? `PID: ${dbInfo.pid}` : '',
-      icon: displayInfo.icon,
-      colorClass: displayInfo.colorClass
-    };
-  };
-
   // 加载数据库列表
   const loadDatabases = async () => {
     try {
       const dbs = await getDatabases();
-      const instances = dbs.map(convertToDBInstance);
-      setDatabases(instances);
+      console.log('dbs', dbs);
+      setDatabases(dbs);
     } catch (error) {
       console.error('Failed to load databases:', error);
     }
@@ -222,7 +210,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     name: db.name,
     version: 'Not Installed',
     type: db.type,
-    status: DBStatus.NOT_INSTALLED,
+    status: 'notinstalled',
     port: '-',
     meta: 'Click to install',
     icon: db.icon,
@@ -266,7 +254,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
           </thead>
           <tbody className="dark:divide-border-dark divide-y divide-gray-200">
             {allDatabases.map((db) => {
-              const IconComponent = getIconComponent(db.icon);
+              const IconComponent = getIconComponent(db.icon || 'grid_view');
               const displayInfo = getDbDisplayInfo(db.type);
               return (
                 <tr key={db.id} className="group transition-colors hover:bg-slate-50 dark:hover:bg-white/2">
@@ -285,19 +273,19 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                     <span className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">{db.type}</span>
                   </td>
                   <td className="px-6 py-5">
-                    {db.status === DBStatus.RUNNING && (
+                    {db.status === 'running' && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-green-500 uppercase">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"></span>
                         Running
                       </span>
                     )}
-                    {db.status === DBStatus.STOPPED && (
+                    {db.status === 'stopped' && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:bg-white/5 dark:text-[#9da6b9]">
                         <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
                         Stopped
                       </span>
                     )}
-                    {db.status === DBStatus.NOT_INSTALLED && (
+                    {db.status === 'notinstalled' && (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-amber-500 uppercase">
                         <FiAlertTriangle size={14} />
                         Not Installed
@@ -305,7 +293,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                     )}
                   </td>
                   <td className="px-6 py-5">
-                    {db.status === DBStatus.RUNNING ? (
+                    {db.status === 'running' ? (
                       <p className="font-mono text-xs text-slate-500 dark:text-[#9da6b9]">{db.port}</p>
                     ) : (
                       <p className="text-[11px] text-slate-500 italic opacity-60 dark:text-[#9da6b9]">
@@ -315,7 +303,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                   </td>
                   <td className="px-6 py-5 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {db.status === DBStatus.RUNNING ? (
+                      {db.status === 'running' ? (
                         <>
                           <button
                             onClick={() => handleStop(db.id, db.name)}
@@ -332,7 +320,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                             <FiTrash2 size={14} />
                           </button>
                         </>
-                      ) : db.status === DBStatus.STOPPED ? (
+                      ) : db.status === 'stopped' ? (
                         <>
                           <button
                             onClick={() => handleStart(db.id, db.name)}
@@ -349,33 +337,31 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                             <FiTrash2 size={14} />
                           </button>
                         </>
+                      ) : // Show loading state for install button
+                      installTask?.db_type === db.type && installTask.status !== TaskStatus.COMPLETED ? (
+                        <button
+                          disabled={true}
+                          className="bg-primary/80 shadow-primary/20 flex cursor-not-allowed items-center gap-2 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
+                        >
+                          <FiLoader size={14} className="animate-spin" />
+                          {installTask.status === TaskStatus.FAILED ? 'Failed' : `${installTask.progress}%`}
+                        </button>
+                      ) : installTask?.db_type === db.type && installTask.status === TaskStatus.COMPLETED ? (
+                        <button
+                          disabled={true}
+                          className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
+                        >
+                          <FiCheck size={14} />
+                          Done
+                        </button>
                       ) : (
-                        // Show loading state for install button
-                        installTask?.db_type === db.type && installTask.status !== TaskStatus.COMPLETED ? (
-                          <button
-                            disabled={true}
-                            className="bg-primary/80 cursor-not-allowed shadow-primary/20 flex items-center gap-2 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
-                          >
-                            <FiLoader size={14} className="animate-spin" />
-                            {installTask.status === TaskStatus.FAILED ? 'Failed' : `${installTask.progress}%`}
-                          </button>
-                        ) : installTask?.db_type === db.type && installTask.status === TaskStatus.COMPLETED ? (
-                          <button
-                            disabled={true}
-                            className="bg-green-600 flex items-center gap-2 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
-                          >
-                            <FiCheck size={14} />
-                            Done
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleInstall(db.type)}
-                            disabled={!!loading}
-                            className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
-                          >
-                            Install
-                          </button>
-                        )
+                        <button
+                          onClick={() => handleInstall(db.type)}
+                          disabled={!!loading}
+                          className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
+                        >
+                          Install
+                        </button>
                       )}
                     </div>
                   </td>

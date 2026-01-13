@@ -12,7 +12,20 @@
       "Bash(xargs kill -9)",
       "Bash(/homebrew/brew/brew services list:*)",
       "Bash(pnpm install:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(pnpm fmt:rs)",
+      "Bash(cargo test:*)",
+      "Bash(brew tap:*)",
+      "Bash(brew search:*)",
+      "Bash(brew list:*)",
+      "WebFetch(domain:qdrant.tech)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:www.oceanbase.ai)",
+      "WebSearch",
+      "Bash(brew services:*)",
+      "Bash(brew:*)",
+      "Bash(PGPASSWORD=admin888 /opt/homebrew/opt/postgresql@18/bin/psql:*)"
     ]
   }
 }

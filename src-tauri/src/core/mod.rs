@@ -5,4 +5,3 @@ pub mod utils;
 
 pub use db_manager::*;
 pub use types::*;
-pub use macos::{get_homebrew_service_status, get_installed_databases_from_homebrew};

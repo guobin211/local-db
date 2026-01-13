@@ -9,14 +9,17 @@ use tauri_plugin_log::log;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 创建应用状态
+    let startup_time = std::time::Instant::now();
     let app_state = AppState::new();
+    let startup_duration = startup_time.elapsed();
+    println!("Startup time: {}ms", startup_duration.as_millis());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_os::init())
         .plugin(
             tauri_plugin_log::Builder::new()
-                .level(tauri_plugin_log::log::LevelFilter::Info)
+                .level(log::LevelFilter::Info)
                 .build(),
         )
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -34,11 +37,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(app_state.clone())
-        .setup(move |_app| {
-            // 启动自动启动的数据库
-            app_state.start_autostart_databases();
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             // 数据库命令
             command::get_databases,
@@ -52,6 +50,7 @@ pub fn run() {
             command::install_database,
             command::update_database_autostart,
             command::get_task_status,
+            command::sync_databases_status,
             // 设置命令
             command::get_settings,
             command::update_settings,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMessageCircle } from 'react-icons/fi';
 import { Sidebar } from './components/sidebar';
 import { Dashboard } from './components/dashboard';
@@ -6,9 +6,17 @@ import { InstancesView } from './components/instances-view';
 import { ResourceLogs } from './components/resource-logs';
 import { Settings } from './components/settings';
 import { ViewType } from './types';
+import { syncDatabasesStatus } from './command/database';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+
+  // 页面加载完成后同步数据库状态
+  useEffect(() => {
+    syncDatabasesStatus().catch((err) => {
+      console.error('Failed to sync databases status:', err);
+    });
+  }, []);
 
   const renderView = () => {
     switch (currentView) {

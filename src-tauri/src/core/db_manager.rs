@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// 数据库管理器
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct DatabaseManager {
     storage_path: PathBuf,
     // 模拟的进程ID存储
@@ -26,6 +28,7 @@ impl DatabaseManager {
     }
 
     /// 生成模拟的PID
+    #[allow(dead_code)]
     fn generate_mock_pid(&self) -> u32 {
         let mut next_pid = self.next_pid.lock().unwrap();
         let pid = *next_pid;
@@ -107,10 +110,10 @@ impl DatabaseManager {
             db_info.pid = None;
             db_info.updated_at = utils::get_timestamp();
 
-            return Ok(OperationResult::success(
+            Ok(OperationResult::success(
                 format!("{} started successfully", db_info.name),
                 None,
-            ));
+            ))
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -159,10 +162,10 @@ impl DatabaseManager {
             db_info.pid = None;
             db_info.updated_at = utils::get_timestamp();
 
-            return Ok(OperationResult::success(
+            Ok(OperationResult::success(
                 format!("{} stopped successfully", db_info.name),
                 None,
-            ));
+            ))
         }
 
         #[cfg(not(target_os = "macos"))]

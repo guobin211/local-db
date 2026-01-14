@@ -1,7 +1,13 @@
 use super::types::{DatabaseInfo, DatabaseStatus, OperationResult};
 use super::utils;
+#[cfg(target_os = "linux")]
+use crate::core::linux::{start_service, stop_service};
 #[cfg(target_os = "macos")]
-use crate::core::macos::{start_service_for_database, stop_service_for_database};
+use crate::core::macos::{
+    start_service_for_database as start_service, stop_service_for_database as stop_service,
+};
+#[cfg(target_os = "windows")]
+use crate::core::windows::{start_service, stop_service};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -89,7 +95,7 @@ impl DatabaseManager {
 
     /// 启动数据库
     pub fn start_database(&self, db_info: &mut DatabaseInfo) -> Result<OperationResult<()>> {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             if db_info.status == DatabaseStatus::NotInstalled {
                 return Ok(OperationResult::error("Database is not installed"));
@@ -99,11 +105,8 @@ impl DatabaseManager {
                 return Ok(OperationResult::error("Database is already running"));
             }
 
-            if let Err(err) = start_service_for_database(db_info) {
-                return Ok(OperationResult::error(format!(
-                    "Failed to start via Homebrew: {}",
-                    err
-                )));
+            if let Err(err) = start_service(db_info) {
+                return Ok(OperationResult::error(format!("Failed to start: {}", err)));
             }
 
             db_info.status = DatabaseStatus::Running;
@@ -116,7 +119,7 @@ impl DatabaseManager {
             ))
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             if !self.is_installed(db_info) {
                 return Ok(OperationResult::error("Database is not installed"));
@@ -145,17 +148,14 @@ impl DatabaseManager {
 
     /// 停止数据库
     pub fn stop_database(&self, db_info: &mut DatabaseInfo) -> Result<OperationResult<()>> {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             if db_info.status != DatabaseStatus::Running {
                 return Ok(OperationResult::error("Database is not running"));
             }
 
-            if let Err(err) = stop_service_for_database(db_info) {
-                return Ok(OperationResult::error(format!(
-                    "Failed to stop via Homebrew: {}",
-                    err
-                )));
+            if let Err(err) = stop_service(db_info) {
+                return Ok(OperationResult::error(format!("Failed to stop: {}", err)));
             }
 
             db_info.status = DatabaseStatus::Stopped;
@@ -168,7 +168,7 @@ impl DatabaseManager {
             ))
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             if self.get_status(db_info) != DatabaseStatus::Running {
                 return Ok(OperationResult::error("Database is not running"));

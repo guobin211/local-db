@@ -1,6 +1,4 @@
-use crate::core::{
-    AsyncTask, DatabaseInfo, DatabaseManager, GlobalSettings,
-};
+use crate::core::{AsyncTask, DatabaseInfo, DatabaseManager, GlobalSettings};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;

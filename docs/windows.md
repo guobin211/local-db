@@ -2,7 +2,7 @@
 
 本文档提供在 Windows 上**完全规避容器技术**（Docker/Podman）的数据库安装方案，优先使用**官方二进制包**，其次使用 MSI 安装包。
 
-支持的数据库：MongoDB、MySQL、Redis、Neo4j、Qdrant、SeekDB、SurrealDB
+支持的数据库：MongoDB、MySQL、Redis、Qdrant、SurrealDB
 
 适配架构：AMD64（x86_64）/ ARM64（aarch64）
 
@@ -17,7 +17,7 @@
 
 ### 1.2 安装基础工具
 
-- 解压工具：WinRAR/7-Zip（用于解压二进制包）
+- 解压工具：用于解压二进制包
 - 命令行工具：Windows 终端/PowerShell（管理员模式运行）
 - 文本编辑器：Notepad++/VS Code（编辑配置文件，避免记事本乱码）
 

@@ -189,21 +189,65 @@ pub fn install_database(
     let settings_arc = state.settings.clone();
     let tasks_arc = state.tasks.clone();
     let task_id_for_thread = task_id.clone();
+    let app_handle_clone = _app_handle.clone();
 
     // 启动线程执行安装
     std::thread::spawn(move || {
+        use tauri::Emitter;
         let task_id_clone = task_id_for_thread.clone();
 
-        // 更新任务状态为运行中
-        {
+        // 模拟安装进度的函数
+        let update_progress = |progress: u8, message: &str| {
             let mut tasks = tasks_arc.lock().unwrap();
             if let Some(task) = tasks.get_mut(&task_id_clone) {
                 task.status = crate::core::TaskStatus::Running;
-                task.progress = 10;
-                task.message = "Starting installation...".to_string();
+                task.progress = progress;
+                task.message = message.to_string();
                 task.updated_at = crate::core::utils::get_timestamp();
+                // 发送事件到前端
+                let _ = app_handle_clone.emit("install-progress", task.clone());
             }
-        }
+        };
+
+        // 初始状态
+        update_progress(0, "Starting installation...");
+
+        // 模拟进度增长线程
+        let task_id_for_progress = task_id_clone.clone();
+        let tasks_arc_for_progress = tasks_arc.clone();
+        let app_handle_for_progress = app_handle_clone.clone();
+        let progress_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let progress_stop_clone = progress_stop.clone();
+
+        std::thread::spawn(move || {
+            let mut current_progress = 0;
+            while !progress_stop_clone.load(std::sync::atomic::Ordering::Relaxed)
+                && current_progress < 98
+            {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                if progress_stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                current_progress += 2;
+                if current_progress > 98 {
+                    current_progress = 98;
+                }
+
+                let mut tasks = tasks_arc_for_progress.lock().unwrap();
+                if let Some(task) = tasks.get_mut(&task_id_for_progress) {
+                    // 只有在仍然是运行中状态时才更新模拟进度
+                    if task.status == crate::core::TaskStatus::Running {
+                        task.progress = current_progress;
+                        task.updated_at = crate::core::utils::get_timestamp();
+                        let _ = app_handle_for_progress.emit("install-progress", task.clone());
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
 
         #[cfg(target_os = "macos")]
         let install_result: Result<crate::core::DatabaseInfo, String> = {
@@ -223,7 +267,35 @@ pub fn install_database(
             .map_err(|e| format!("Installation failed: {}", e))
         };
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        let install_result: Result<crate::core::DatabaseInfo, String> = {
+            let options = crate::core::windows::WindowsInstallOptions {
+                version: version_param.as_deref(),
+                port: port_param,
+                username: username_param.as_deref(),
+                password: password_param.as_deref(),
+                auto_start: true,
+            };
+
+            crate::core::windows::install_database(&db_type_clone, &storage_path_clone, &options)
+                .map_err(|e| format!("Installation failed: {}", e))
+        };
+
+        #[cfg(target_os = "linux")]
+        let install_result: Result<crate::core::DatabaseInfo, String> = {
+            let options = crate::core::linux::LinuxInstallOptions {
+                version: version_param.as_deref(),
+                port: port_param,
+                username: username_param.as_deref(),
+                password: password_param.as_deref(),
+                auto_start: true,
+            };
+
+            crate::core::linux::install_database(&db_type_clone, &storage_path_clone, &options)
+                .map_err(|e| format!("Installation failed: {}", e))
+        };
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         let install_result: Result<crate::core::DatabaseInfo, String> = {
             // Create database info - simulate installation completion
             Ok(crate::core::DatabaseInfo {
@@ -260,6 +332,9 @@ pub fn install_database(
             })
         };
 
+        // 停止进度模拟
+        progress_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+
         // 处理安装结果
         match install_result {
             Ok(db_info) => {
@@ -290,15 +365,18 @@ pub fn install_database(
 
                 match add_result {
                     Ok(_) => {
+                        use tauri::Emitter;
                         let mut tasks = tasks_arc.lock().unwrap();
                         if let Some(task) = tasks.get_mut(&task_id_clone) {
                             task.status = crate::core::TaskStatus::Completed;
                             task.progress = 100;
                             task.message = "Installation completed successfully".to_string();
                             task.updated_at = crate::core::utils::get_timestamp();
+                            let _ = app_handle_clone.emit("install-progress", task.clone());
                         }
                     }
                     Err(e) => {
+                        use tauri::Emitter;
                         let mut tasks = tasks_arc.lock().unwrap();
                         if let Some(task) = tasks.get_mut(&task_id_clone) {
                             task.status = crate::core::TaskStatus::Failed;
@@ -306,17 +384,20 @@ pub fn install_database(
                             task.message =
                                 "Installation completed but failed to register".to_string();
                             task.updated_at = crate::core::utils::get_timestamp();
+                            let _ = app_handle_clone.emit("install-progress", task.clone());
                         }
                     }
                 }
             }
             Err(e) => {
+                use tauri::Emitter;
                 let mut tasks = tasks_arc.lock().unwrap();
                 if let Some(task) = tasks.get_mut(&task_id_clone) {
                     task.status = crate::core::TaskStatus::Failed;
                     task.error = Some(e);
                     task.message = "Installation failed".to_string();
                     task.updated_at = crate::core::utils::get_timestamp();
+                    let _ = app_handle_clone.emit("install-progress", task.clone());
                 }
             }
         }
@@ -403,35 +484,101 @@ pub fn get_task_status(state: State<AppState>, task_id: String) -> Option<crate:
 /// 2. 对于使用 Homebrew 的数据库（MySQL, PostgreSQL, MongoDB, Redis），检查 brew services list
 /// 3. 更新数据库状态信息，纠正可能不正确的状态
 #[tauri::command]
-pub fn sync_databases_status(state: State<AppState>) -> Vec<DatabaseInfo> {
-    #[cfg(target_os = "macos")]
+pub fn sync_databases_status(
+    state: State<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Vec<DatabaseInfo> {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
+        #[cfg(target_os = "macos")]
         use crate::core::macos::get_all_homebrew_services_status;
         use crate::core::DatabaseType;
         use std::path::Path;
 
         let databases = state.get_all_databases();
-        
+
         // 一次性获取所有 Homebrew 服务的状态，提高效率
+        #[cfg(target_os = "macos")]
         let brew_services = get_all_homebrew_services_status();
+
+        let mut has_updates = false;
 
         for mut db_info in databases {
             let actual_status = match db_info.db_type {
                 // Qdrant 通过 PID 文件检查状态
                 DatabaseType::Qdrant => {
-                    let pid_path = Path::new(&db_info.data_path).join("qdrant.pid");
+                    let pid_file = if cfg!(target_os = "windows") {
+                        "qdrant.pid"
+                    } else {
+                        "qdrant.pid"
+                    };
+                    let pid_path = Path::new(&db_info.data_path).join(pid_file);
                     check_pid_file_status(&pid_path)
                 }
                 // SurrealDB 通过 PID 文件检查状态
                 DatabaseType::SurrealDB => {
-                    let pid_path = Path::new(&db_info.data_path).join("surrealdb.pid");
+                    let pid_file = if cfg!(target_os = "windows") {
+                        "surrealdb.pid"
+                    } else {
+                        "surrealdb.pid"
+                    };
+                    let pid_path = Path::new(&db_info.data_path).join(pid_file);
                     check_pid_file_status(&pid_path)
                 }
-                // 其他数据库通过 brew services 检查状态
+                // Windows 上的其他数据库也通过 PID 文件检查
+                #[cfg(target_os = "windows")]
                 DatabaseType::Redis => {
-                    get_database_status_from_brew(&brew_services, "redis")
-                        .unwrap_or(DatabaseStatus::Stopped)
+                    let pid_path = Path::new(&db_info.data_path).join("redis.pid");
+                    check_pid_file_status(&pid_path)
                 }
+                #[cfg(target_os = "windows")]
+                DatabaseType::MongoDB => {
+                    let pid_path = Path::new(&db_info.data_path).join("mongodb.pid");
+                    check_pid_file_status(&pid_path)
+                }
+                #[cfg(target_os = "windows")]
+                DatabaseType::MySQL => {
+                    let pid_path = Path::new(&db_info.data_path).join("mysql.pid");
+                    check_pid_file_status(&pid_path)
+                }
+                #[cfg(target_os = "windows")]
+                DatabaseType::PostgreSQL => {
+                    let pid_path = Path::new(&db_info.data_path).join("postgresql.pid");
+                    check_pid_file_status(&pid_path)
+                }
+
+                // Linux 上的数据库通过 PID 文件检查
+                #[cfg(target_os = "linux")]
+                DatabaseType::Redis => {
+                    let pid_path = Path::new(&db_info.data_path).join("redis.pid");
+                    check_pid_file_status(&pid_path)
+                }
+                #[cfg(target_os = "linux")]
+                DatabaseType::MongoDB => {
+                    let pid_path = Path::new(&db_info.data_path).join("mongodb.pid");
+                    check_pid_file_status(&pid_path)
+                }
+                #[cfg(target_os = "linux")]
+                DatabaseType::MySQL => {
+                    let pid_path = Path::new(&db_info.data_path).join("mysql.pid");
+                    check_pid_file_status(&pid_path)
+                }
+                #[cfg(target_os = "linux")]
+                DatabaseType::PostgreSQL => {
+                    let pid_path = Path::new(&db_info.data_path).join("postgresql.pid");
+                    check_pid_file_status(&pid_path)
+                }
+                #[cfg(target_os = "linux")]
+                DatabaseType::SeekDB => {
+                    let pid_path = Path::new(&db_info.data_path).join("seekdb.pid");
+                    check_pid_file_status(&pid_path)
+                }
+
+                // 其他数据库通过 brew services 检查状态
+                #[cfg(target_os = "macos")]
+                DatabaseType::Redis => get_database_status_from_brew(&brew_services, "redis")
+                    .unwrap_or(DatabaseStatus::Stopped),
+                #[cfg(target_os = "macos")]
                 DatabaseType::MySQL => {
                     // 尝试多个常见的 MySQL 版本标签
                     get_database_status_from_brew(&brew_services, "mysql@8.4")
@@ -439,6 +586,7 @@ pub fn sync_databases_status(state: State<AppState>) -> Vec<DatabaseInfo> {
                         .or_else(|| get_database_status_from_brew(&brew_services, "mysql"))
                         .unwrap_or(DatabaseStatus::Stopped)
                 }
+                #[cfg(target_os = "macos")]
                 DatabaseType::PostgreSQL => {
                     // 尝试多个常见的 PostgreSQL 版本标签
                     get_database_status_from_brew(&brew_services, "postgresql@18")
@@ -447,13 +595,19 @@ pub fn sync_databases_status(state: State<AppState>) -> Vec<DatabaseInfo> {
                         .or_else(|| get_database_status_from_brew(&brew_services, "postgresql"))
                         .unwrap_or(DatabaseStatus::Stopped)
                 }
+                #[cfg(target_os = "macos")]
                 DatabaseType::MongoDB => {
                     // 尝试多个常见的 MongoDB 版本标签
                     get_database_status_from_brew(&brew_services, "mongodb-community@7.0")
-                        .or_else(|| get_database_status_from_brew(&brew_services, "mongodb-community@6.0"))
-                        .or_else(|| get_database_status_from_brew(&brew_services, "mongodb-community"))
+                        .or_else(|| {
+                            get_database_status_from_brew(&brew_services, "mongodb-community@6.0")
+                        })
+                        .or_else(|| {
+                            get_database_status_from_brew(&brew_services, "mongodb-community")
+                        })
                         .unwrap_or(DatabaseStatus::Stopped)
                 }
+                DatabaseType::Neo4j | DatabaseType::SeekDB => DatabaseStatus::Stopped,
             };
 
             // 如果状态有变化，更新数据库信息
@@ -461,8 +615,91 @@ pub fn sync_databases_status(state: State<AppState>) -> Vec<DatabaseInfo> {
                 db_info.status = actual_status.clone();
                 db_info.updated_at = crate::core::utils::get_timestamp();
                 state.update_database(db_info);
+                has_updates = true;
             }
         }
+
+        // 自动发现 Homebrew 服务并注册未知的数据库 (macOS only)
+        #[cfg(target_os = "macos")]
+        {
+            use crate::core::utils;
+
+            // 定义服务名到数据库类型的映射
+            let service_mappings = [
+                ("mysql", DatabaseType::MySQL),
+                ("postgresql", DatabaseType::PostgreSQL),
+                ("redis", DatabaseType::Redis),
+                ("mongodb-community", DatabaseType::MongoDB),
+            ];
+
+            // 获取当前已注册的数据库类型集合
+            let registered_types: std::collections::HashSet<DatabaseType> = state
+                .get_all_databases()
+                .iter()
+                .map(|db| db.db_type.clone())
+                .collect();
+
+            for (service_name, is_running) in &brew_services {
+                if !is_running {
+                    continue;
+                }
+
+                for (prefix, db_type) in &service_mappings {
+                    // 检查服务名是否匹配 (例如 "mysql@8.4" 匹配 "mysql")
+                    if service_name.starts_with(prefix) && !registered_types.contains(db_type) {
+                        // 发现未注册的运行中服务，自动注册
+                        let version = if service_name.contains('@') {
+                            service_name
+                                .split('@')
+                                .last()
+                                .unwrap_or("unknown")
+                                .to_string()
+                        } else {
+                            "detected".to_string()
+                        };
+
+                        let port = match db_type {
+                            DatabaseType::MySQL => 3306,
+                            DatabaseType::PostgreSQL => 5432,
+                            DatabaseType::Redis => 6379,
+                            DatabaseType::MongoDB => 27017,
+                            _ => 0,
+                        };
+
+                        let new_db = DatabaseInfo {
+                            id: utils::generate_id(),
+                            name: db_type.display_name().to_string(),
+                            db_type: db_type.clone(),
+                            version,
+                            install_path: "Managed by Homebrew".to_string(),
+                            data_path: "Managed by Homebrew".to_string(),
+                            log_path: "".to_string(),
+                            port,
+                            username: None,
+                            password: None,
+                            config: None,
+                            status: DatabaseStatus::Running,
+                            auto_start: false,
+                            pid: None,
+                            created_at: utils::get_timestamp(),
+                            updated_at: utils::get_timestamp(),
+                        };
+
+                        state.update_database(new_db);
+                        has_updates = true;
+
+                        // 只添加一次同类型数据库
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 如果有更新，或者仅仅为了通知前端最新状态，都发射事件
+        // 这里选择总是发射，确保前端能收到最新的完整列表
+        use tauri::Emitter;
+        let updated_databases = state.get_all_databases();
+        let _ = app_handle.emit("databases-updated", &updated_databases);
     }
 
     // 返回更新后的数据库列表
@@ -485,7 +722,7 @@ fn get_database_status_from_brew(
 }
 
 /// 检查 PID 文件中的进程是否存在
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn check_pid_file_status(pid_path: &std::path::Path) -> DatabaseStatus {
     use std::fs;
 
@@ -500,6 +737,16 @@ fn check_pid_file_status(pid_path: &std::path::Path) -> DatabaseStatus {
                 use nix::sys::signal::{kill, Signal};
                 use nix::unistd::Pid;
                 if kill(Pid::from_raw(pid), Signal::SIGCONT).is_ok() {
+                    return DatabaseStatus::Running;
+                }
+            }
+
+            #[cfg(windows)]
+            {
+                use sysinfo::System;
+                let mut sys = System::new_all();
+                sys.refresh_all();
+                if sys.process(sysinfo::Pid::from(pid as usize)).is_some() {
                     return DatabaseStatus::Running;
                 }
             }

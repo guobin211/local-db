@@ -1,21 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import { FiMoon, FiSun, FiDownload, FiRefreshCw, FiCheck } from 'react-icons/fi';
 import { useUpdater } from '../hooks/use-updater';
+import { getSettings, updateSettings, getStoredTheme, setStoredTheme, GlobalSettings } from '../command/settings';
 
 // 设置页面组件
 export const Settings: React.FC = () => {
-  const [isDark, setIsDark] = useState(false);
+  const [settings, setSettings] = useState<GlobalSettings | null>(null);
+  const [isDark, setIsDark] = useState(getStoredTheme() === 'dark');
   const { updateInfo, isChecking, isInstalling, error, checkForUpdates, installUpdateNow } = useUpdater();
 
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDark]);
+    const loadSettings = async () => {
+      try {
+        const s = await getSettings();
+        setSettings(s);
+        setIsDark(s.theme === 'dark');
+      } catch (err) {
+        console.error('Failed to load settings:', err);
+      }
+    };
+    loadSettings();
+  }, []);
 
-  const toggleTheme = () => setIsDark(!isDark);
+  const toggleTheme = async () => {
+    const newDark = !isDark;
+    setIsDark(newDark);
+    const newTheme = newDark ? 'dark' : 'light';
+
+    if (settings) {
+      const updatedSettings = { ...settings, theme: newTheme };
+      try {
+        await updateSettings(updatedSettings);
+        setSettings(updatedSettings);
+      } catch (err) {
+        console.error('Failed to update theme:', err);
+      }
+    } else {
+      // If settings are not loaded yet, at least update localStorage
+      setStoredTheme(newTheme);
+    }
+  };
 
   const handleCheckForUpdates = async () => {
     await checkForUpdates();

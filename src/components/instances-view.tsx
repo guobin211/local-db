@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import {
   FiGrid,
   FiZap,
@@ -8,7 +9,6 @@ import {
   FiAlertTriangle,
   FiChevronLeft,
   FiChevronRight,
-  FiTrash2,
   FiLoader,
   FiCheck
 } from 'react-icons/fi';
@@ -16,9 +16,7 @@ import {
   getDatabases,
   startDatabase,
   stopDatabase,
-  deleteDatabase,
   installDatabase,
-  getTaskStatus,
   DatabaseInfo,
   AsyncTask
 } from '../command/database';
@@ -55,7 +53,7 @@ export const SUPPORTED_DATABASES = [
     name: 'SurrealDB',
     icon: 'all_inclusive',
     colorClass: 'text-orange-500 bg-orange-500/10'
-  },
+  }
 ];
 
 const getIconComponent = (iconName: string) => {
@@ -105,7 +103,55 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
 
   // 初始加载
   useEffect(() => {
+    let isMounted = true;
+    let unlistenProgress: (() => void) | undefined;
+    let unlistenStatus: (() => void) | undefined;
+
     loadDatabases();
+
+    const setupListeners = async () => {
+      // 监听安装进度事件
+      const u1 = await listen<AsyncTask>('install-progress', (event) => {
+        if (!isMounted) return;
+        console.log('Install progress:', event.payload);
+        setInstallTask(event.payload);
+
+        if (event.payload.status === TaskStatus.COMPLETED || event.payload.status === TaskStatus.FAILED) {
+          setLoading(null);
+          loadDatabases();
+          setTimeout(() => {
+            if (isMounted) setInstallTask(null);
+          }, 3000);
+        }
+      });
+
+      if (!isMounted) {
+        u1();
+      } else {
+        unlistenProgress = u1;
+      }
+
+      // 监听数据库状态更新事件（来自后台同步）
+      const u2 = await listen<DatabaseInfo[]>('databases-updated', (event) => {
+        if (!isMounted) return;
+        console.log('Databases updated from backend:', event.payload);
+        setDatabases(event.payload);
+      });
+
+      if (!isMounted) {
+        u2();
+      } else {
+        unlistenStatus = u2;
+      }
+    };
+
+    setupListeners();
+
+    return () => {
+      isMounted = false;
+      if (unlistenProgress) unlistenProgress();
+      if (unlistenStatus) unlistenStatus();
+    };
   }, []);
 
   // 获取数据库的显示信息（图标、颜色等）
@@ -118,25 +164,8 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
   const handleInstall = async (dbType: string) => {
     setLoading(dbType);
     try {
-      const taskId = await installDatabase({ db_type: dbType });
-      // Start polling for task status
-      const interval = setInterval(async () => {
-        const task = await getTaskStatus(taskId);
-        if (!task) {
-          clearInterval(interval);
-          return;
-        }
-
-        setInstallTask(task);
-
-        // Task completed or failed
-        if (task.status === TaskStatus.COMPLETED || task.status === TaskStatus.FAILED) {
-          clearInterval(interval);
-          setLoading(null);
-          await loadDatabases();
-          setTimeout(() => setInstallTask(null), 3000); // Clear task after 3 seconds
-        }
-      }, 1000);
+      await installDatabase({ db_type: dbType });
+      // 进度更新现在通过 tauri event 监听，不再需要手动轮询
     } catch (error) {
       console.error('Failed to install database:', error);
       setLoading(null);
@@ -177,27 +206,6 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     }
   };
 
-  // 处理删除数据库
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete ${name}?`)) {
-      return;
-    }
-
-    setLoading('deleting');
-    try {
-      const result = await deleteDatabase(id, false);
-      if (result.success) {
-        await loadDatabases();
-      } else {
-        console.error(`Failed to delete ${name}: ${result.message}`);
-      }
-    } catch (error) {
-      console.error('Failed to delete database:', error);
-    } finally {
-      setLoading(null);
-    }
-  };
-
   // Helper to get disabled prop value
   const getDisabledValue = (isLoading: boolean): boolean | undefined => {
     return isLoading ? true : undefined;
@@ -221,8 +229,8 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
 
   return (
     <div className="dark:bg-card-dark dark:border-border-dark flex h-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="dark:border-border-dark dark:bg-card-dark flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
-        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Active Instances</h3>
+      <div className="dark:border-border-dark dark:bg-card-dark flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
+        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Active Instances</h3>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">Sort by:</span>
           <button className="hover:text-primary flex items-center gap-1 text-xs font-bold text-slate-900 transition-colors dark:text-white">
@@ -235,19 +243,19 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
         <table className="w-full min-w-200 border-collapse text-left">
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-50 dark:bg-[#1c1f27]">
-              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+              <th className="px-3 py-3 pl-5 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Database
               </th>
-              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+              <th className="px-3 py-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Type
               </th>
-              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+              <th className="px-3 py-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Status
               </th>
-              <th className="px-6 py-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+              <th className="px-3 py-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Port / Meta
               </th>
-              <th className="px-6 py-4 text-right text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+              <th className="px-3 py-3 pr-5 text-right text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Actions
               </th>
             </tr>
@@ -258,10 +266,10 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
               const displayInfo = getDbDisplayInfo(db.type);
               return (
                 <tr key={db.id} className="group transition-colors hover:bg-slate-50 dark:hover:bg-white/2">
-                  <td className="px-6 py-5">
+                  <td className="px-3 py-3.5 pl-5">
                     <div className="flex items-center gap-3">
-                      <div className={`flex size-10 items-center justify-center rounded-lg ${displayInfo.colorClass}`}>
-                        <IconComponent size={20} />
+                      <div className={`flex size-9 items-center justify-center rounded-lg ${displayInfo.colorClass}`}>
+                        <IconComponent size={18} />
                       </div>
                       <div>
                         <p className="text-sm font-bold text-slate-900 dark:text-white">{db.name}</p>
@@ -269,30 +277,30 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-5">
+                  <td className="px-3 py-3.5">
                     <span className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">{db.type}</span>
                   </td>
-                  <td className="px-6 py-5">
+                  <td className="px-3 py-3.5">
                     {db.status === 'running' && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-green-500 uppercase">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-green-500 uppercase">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"></span>
                         Running
                       </span>
                     )}
                     {db.status === 'stopped' && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:bg-white/5 dark:text-[#9da6b9]">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:bg-white/5 dark:text-[#9da6b9]">
                         <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
                         Stopped
                       </span>
                     )}
                     {db.status === 'notinstalled' && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-amber-500 uppercase">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-amber-500 uppercase">
                         <FiAlertTriangle size={14} />
                         Not Installed
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-5">
+                  <td className="px-3 py-3.5">
                     {db.status === 'running' ? (
                       <p className="font-mono text-xs text-slate-500 dark:text-[#9da6b9]">{db.port}</p>
                     ) : (
@@ -301,23 +309,16 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                       </p>
                     )}
                   </td>
-                  <td className="px-6 py-5 text-right">
+                  <td className="px-3 py-3.5 pr-5 text-right">
                     <div className="flex items-center justify-end gap-2">
                       {db.status === 'running' ? (
                         <>
                           <button
                             onClick={() => handleStop(db.id, db.name)}
                             disabled={getDisabledValue(!!loading)}
-                            className="rounded-lg border border-red-500/30 px-4 py-1.5 text-[11px] font-bold tracking-wider text-red-500 uppercase transition-all hover:bg-red-500/10 disabled:opacity-50"
+                            className="rounded-lg border border-red-500/30 px-3 py-1 text-[10px] font-bold tracking-wider text-red-500 uppercase transition-all hover:bg-red-500/10 disabled:opacity-50"
                           >
                             Stop
-                          </button>
-                          <button
-                            onClick={() => handleDelete(db.id, db.name)}
-                            disabled={getDisabledValue(!!loading)}
-                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-slate-500 transition-all hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
-                          >
-                            <FiTrash2 size={14} />
                           </button>
                         </>
                       ) : db.status === 'stopped' ? (
@@ -325,23 +326,16 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                           <button
                             onClick={() => handleStart(db.id, db.name)}
                             disabled={getDisabledValue(!!loading)}
-                            className="bg-primary hover:bg-primary/90 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all disabled:opacity-50"
+                            className="bg-primary hover:bg-primary/90 rounded-lg px-3 py-1 text-[10px] font-bold tracking-wider text-white uppercase transition-all disabled:opacity-50"
                           >
                             Start
-                          </button>
-                          <button
-                            onClick={() => handleDelete(db.id, db.name)}
-                            disabled={getDisabledValue(!!loading)}
-                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-slate-500 transition-all hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
-                          >
-                            <FiTrash2 size={14} />
                           </button>
                         </>
                       ) : // Show loading state for install button
                       installTask?.db_type === db.type && installTask.status !== TaskStatus.COMPLETED ? (
                         <button
                           disabled={true}
-                          className="bg-primary/80 shadow-primary/20 flex cursor-not-allowed items-center gap-2 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
+                          className="bg-primary/80 shadow-primary/20 flex cursor-not-allowed items-center gap-2 rounded-lg px-3 py-1 text-[10px] font-bold tracking-wider text-white uppercase transition-all"
                         >
                           <FiLoader size={14} className="animate-spin" />
                           {installTask.status === TaskStatus.FAILED ? 'Failed' : `${installTask.progress}%`}
@@ -349,7 +343,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                       ) : installTask?.db_type === db.type && installTask.status === TaskStatus.COMPLETED ? (
                         <button
                           disabled={true}
-                          className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase transition-all"
+                          className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-1 text-[10px] font-bold tracking-wider text-white uppercase transition-all"
                         >
                           <FiCheck size={14} />
                           Done
@@ -358,7 +352,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                         <button
                           onClick={() => handleInstall(db.type)}
                           disabled={!!loading}
-                          className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-4 py-1.5 text-[11px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
+                          className="bg-primary hover:bg-primary/90 shadow-primary/20 rounded-lg px-3 py-1 text-[10px] font-bold tracking-wider text-white uppercase shadow-lg transition-all disabled:opacity-50"
                         >
                           Install
                         </button>
@@ -372,7 +366,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
         </table>
       </div>
 
-      <div className="dark:border-border-dark flex shrink-0 items-center justify-between border-t border-gray-200 bg-slate-50 px-6 py-4 dark:bg-[#1c1f27]">
+      <div className="dark:border-border-dark flex shrink-0 items-center justify-between border-t border-gray-200 bg-slate-50 px-5 py-3 dark:bg-[#1c1f27]">
         <p className="text-xs font-medium text-slate-500 dark:text-[#9da6b9]">
           Showing {allDatabases.length} database engines ({databases.length} installed)
         </p>

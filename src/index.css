@@ -14,6 +14,10 @@
   --color-border-dark: #282e39;
 }
 
+body {
+  @apply bg-background-light dark:bg-background-dark;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

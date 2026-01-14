@@ -11,6 +11,8 @@ pub enum DatabaseType {
     Redis,
     Qdrant,
     SurrealDB,
+    Neo4j,
+    SeekDB,
 }
 
 impl DatabaseType {
@@ -22,6 +24,8 @@ impl DatabaseType {
             DatabaseType::Redis => "redis",
             DatabaseType::Qdrant => "qdrant",
             DatabaseType::SurrealDB => "surrealdb",
+            DatabaseType::Neo4j => "neo4j",
+            DatabaseType::SeekDB => "seekdb",
         }
     }
 
@@ -33,6 +37,8 @@ impl DatabaseType {
             DatabaseType::Redis => "Redis",
             DatabaseType::Qdrant => "Qdrant",
             DatabaseType::SurrealDB => "SurrealDB",
+            DatabaseType::Neo4j => "Neo4j",
+            DatabaseType::SeekDB => "SeekDB",
         }
     }
 
@@ -44,6 +50,8 @@ impl DatabaseType {
             DatabaseType::Redis => 6379,
             DatabaseType::Qdrant => 6333,
             DatabaseType::SurrealDB => 8000,
+            DatabaseType::Neo4j => 7474,
+            DatabaseType::SeekDB => 8080,
         }
     }
 }

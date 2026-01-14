@@ -11,17 +11,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: FiHome },
     { id: 'instances', label: 'Instances', icon: FiDatabase },
-    { id: 'logs', label: 'Resource Logs', icon: FiActivity }
+    { id: 'logs', label: 'Logs', icon: FiActivity }
   ];
 
   return (
-    <aside className="dark:border-border-dark dark:bg-card-dark flex w-50 shrink-0 flex-col justify-between border-r border-gray-200 bg-white p-4 transition-all">
-      <div className="flex flex-col gap-8">
-        <div className="flex items-center gap-3.5 p-2">
-          <div className="bg-primary shadow-primary/20 flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-lg">
+    <aside className="dark:border-border-dark dark:bg-card-dark flex w-44 shrink-0 flex-col justify-between border-r border-gray-200 bg-white p-4 transition-all">
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-3 p-2" data-tauri-drag-region>
+          <div className="bg-primary shadow-primary/20 pointer-events-none flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-lg">
             <FiDatabase size={24} />
           </div>
-          <div className="flex min-w-0 flex-col">
+          <div className="pointer-events-none flex min-w-0 flex-col">
             <h1 className="truncate text-sm leading-none font-bold tracking-tight text-slate-900 dark:text-white">
               LocalDB
             </h1>

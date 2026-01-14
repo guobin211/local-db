@@ -651,7 +651,7 @@ telemetry_disabled: true
 
         let brew = Homebrew::bootstrap()?;
         let recipe = HomebrewDatabaseRecipe::resolve(&db_info.db_type)?;
-        brew.start_service(recipe.service_name)
+        brew.start_service_with_retry(recipe.service_name)
     }
 
     pub fn stop_service_for_database(db_info: &DatabaseInfo) -> Result<()> {
@@ -688,6 +688,9 @@ telemetry_disabled: true
             DatabaseType::MongoDB => configure_mongodb(brew, storage_path, port),
             DatabaseType::Qdrant => configure_qdrant(brew, storage_path, port),
             DatabaseType::SurrealDB => configure_surrealdb(brew, storage_path, port),
+            DatabaseType::Neo4j | DatabaseType::SeekDB => {
+                bail!("Configuration for {:?} not implemented", db_type)
+            }
         }
     }
 
@@ -1166,6 +1169,36 @@ telemetry_disabled: true
             self.run(&["services", "start", service]).map(|_| ())
         }
 
+        fn start_service_with_retry(&self, service: &str) -> Result<()> {
+            match self.start_service(service) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    // 检查是否是 Bootstrap failed 错误
+                    if err_msg.contains("Bootstrap failed: 5")
+                        || err_msg.contains("Input/output error")
+                    {
+                        eprintln!(
+                            "Start service failed with bootstrap error, attempting recovery for {}",
+                            service
+                        );
+
+                        // 尝试停止服务以清理状态
+                        let _ = self.stop_service(service);
+
+                        // 等待一小会儿让 launchd 清理
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+
+                        // 再次尝试启动
+                        eprintln!("Retrying start service for {}", service);
+                        self.start_service(service)
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        }
+
         fn stop_service(&self, service: &str) -> Result<()> {
             let output = Command::new(&self.bin_path)
                 .args(["services", "stop", service])
@@ -1256,6 +1289,8 @@ telemetry_disabled: true
                 DatabaseType::SurrealDB => {
                     bail!("SurrealDB should be started via direct process, not brew services")
                 }
+                DatabaseType::Neo4j => bail!("Neo4j not yet implemented on macOS"),
+                DatabaseType::SeekDB => bail!("SeekDB not yet implemented on macOS"),
             }
         }
     }
@@ -1327,14 +1362,13 @@ mod imp {
 // macOS 导出
 #[cfg(target_os = "macos")]
 pub use imp::{
-    get_all_homebrew_services_status,
-    install_database_via_homebrew,
-    start_service_for_database, stop_service_for_database,
+    get_all_homebrew_services_status, install_database_via_homebrew, start_service_for_database,
+    stop_service_for_database,
 };
 
 // 非 macOS 导出
 #[cfg(not(target_os = "macos"))]
 pub use imp::{
-    get_all_homebrew_services_status, install_database_via_homebrew,
-    start_service_for_database, stop_service_for_database,
+    get_all_homebrew_services_status, install_database_via_homebrew, start_service_for_database,
+    stop_service_for_database,
 };

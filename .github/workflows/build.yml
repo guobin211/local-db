@@ -92,6 +92,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -100,10 +103,22 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R ./artifacts
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate changelog
+        run: node ./scripts/changelog.js
+        env:
+          ARTIFACTS_DIR: ./artifacts
+          OUTPUT_FILE: ./artifacts/CHANGELOG.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: ./artifacts/**/*
+          body_path: ./artifacts/CHANGELOG.md
           generate_release_notes: true
           draft: false
           prerelease: false

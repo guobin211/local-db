@@ -13,7 +13,9 @@
     "fmt": "pnpm fmt:js && pnpm fmt:rs",
     "fmt:js": "prettier -w . --log-level warn",
     "fmt:rs": "cd src-tauri && cargo fmt --all",
-    "lint": "cd src-tauri && cargo clippy --all --fix --allow-dirty --allow-staged"
+    "lint": "cd src-tauri && cargo clippy --all --fix --allow-dirty --allow-staged",
+    "changelog": "node scripts/generate-changelog.cjs",
+    "changelog:preview": "node scripts/generate-changelog.cjs --dry-run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -40,6 +42,7 @@
     "execa": "^9.6.1",
     "prettier": "^3.7.4",
     "prettier-plugin-tailwindcss": "^0.7.2",
+    "simple-git": "^3.30.0",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"

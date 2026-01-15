@@ -455,8 +455,8 @@ mod imp {
             data_path: data_dir.to_string_lossy().to_string(),
             log_path: log_file.to_string_lossy().to_string(),
             port,
-            username: Some("root".to_string()),
-            password: None,
+            username: options.username.map(|s| s.to_string()).or(Some("root".to_string())),
+            password: options.password.map(|s| s.to_string()),
             config: None,
             status: DatabaseStatus::Stopped,
             auto_start: options.auto_start,
@@ -521,7 +521,7 @@ mod imp {
                 .arg("-D")
                 .arg(&data_dir)
                 .arg("-U")
-                .arg("postgres")
+                .arg(options.username.unwrap_or("postgres"))
                 .arg("--auth=trust")
                 .output()
                 .context("Failed to initialize PostgreSQL")?;
@@ -537,8 +537,8 @@ mod imp {
             data_path: data_dir.to_string_lossy().to_string(),
             log_path: log_file.to_string_lossy().to_string(),
             port,
-            username: Some("postgres".to_string()),
-            password: None,
+            username: options.username.map(|s| s.to_string()).or(Some("postgres".to_string())),
+            password: options.password.map(|s| s.to_string()),
             config: None,
             status: DatabaseStatus::Stopped,
             auto_start: options.auto_start,
@@ -609,8 +609,8 @@ mod imp {
             data_path: data_dir.to_string_lossy().to_string(),
             log_path: log_file.to_string_lossy().to_string(),
             port,
-            username: Some("neo4j".to_string()),
-            password: Some(options.password.unwrap_or("password").to_string()),
+            username: options.username.map(|s| s.to_string()).or(Some("neo4j".to_string())),
+            password: options.password.map(|s| s.to_string()).or(Some("password".to_string())),
             config: None,
             status: DatabaseStatus::Stopped,
             auto_start: options.auto_start,
@@ -688,8 +688,8 @@ mod imp {
             data_path: data_dir.to_string_lossy().to_string(),
             log_path: log_file.to_string_lossy().to_string(),
             port,
-            username: None,
-            password: None,
+            username: options.username.map(|s| s.to_string()),
+            password: options.password.map(|s| s.to_string()),
             config: Some(config_path.to_string_lossy().to_string()),
             status: DatabaseStatus::Stopped,
             auto_start: options.auto_start,

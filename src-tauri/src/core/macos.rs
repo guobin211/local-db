@@ -1040,7 +1040,7 @@ telemetry_disabled: true
             return Some(name.to_string());
         }
         match db_type {
-            DatabaseType::Qdrant => None,
+            DatabaseType::Redis | DatabaseType::Qdrant => None,
             _ => Some("admin".to_string()),
         }
     }
@@ -1050,7 +1050,7 @@ telemetry_disabled: true
             return Some(pwd.to_string());
         }
         match db_type {
-            DatabaseType::Qdrant => None,
+            DatabaseType::Redis | DatabaseType::Qdrant => None,
             _ => Some("admin888".to_string()),
         }
     }

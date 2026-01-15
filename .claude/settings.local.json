@@ -25,7 +25,11 @@
       "WebSearch",
       "Bash(brew services:*)",
       "Bash(brew:*)",
-      "Bash(PGPASSWORD=admin888 /opt/homebrew/opt/postgresql@18/bin/psql:*)"
+      "Bash(PGPASSWORD=admin888 /opt/homebrew/opt/postgresql@18/bin/psql:*)",
+      "Bash(openspec-cn list:*)",
+      "Bash(openspec-cn:*)",
+      "Bash(pnpm changelog:preview)",
+      "Bash(pnpm changelog)"
     ]
   }
 }

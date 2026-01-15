@@ -181,8 +181,16 @@ pub fn install_database(
     let storage_path_clone = storage_path.clone();
     let version_param = params.version.clone();
     let port_param = params.port;
-    let username_param = params.username.clone();
-    let password_param = params.password.clone();
+
+    // 根据数据库类型设置默认凭据
+    let (default_user, default_pass) = match db_type {
+        DatabaseType::Redis | DatabaseType::Qdrant => (None, None),
+        _ => (Some("admin".to_string()), Some("admin888".to_string())),
+    };
+
+    // 设置默认用户名和密码
+    let username_param = params.username.clone().or(default_user);
+    let password_param = params.password.clone().or(default_pass);
 
     // 克隆 Arc 指针以在线程中使用
     let databases_arc = state.databases.clone();
@@ -666,6 +674,11 @@ pub fn sync_databases_status(
                             _ => 0,
                         };
 
+                        let (default_user, default_pass) = match db_type {
+                            DatabaseType::Redis | DatabaseType::Qdrant => (None, None),
+                            _ => (Some("admin".to_string()), Some("admin888".to_string())),
+                        };
+
                         let new_db = DatabaseInfo {
                             id: utils::generate_id(),
                             name: db_type.display_name().to_string(),
@@ -675,8 +688,8 @@ pub fn sync_databases_status(
                             data_path: "Managed by Homebrew".to_string(),
                             log_path: "".to_string(),
                             port,
-                            username: None,
-                            password: None,
+                            username: default_user,
+                            password: default_pass,
                             config: None,
                             status: DatabaseStatus::Running,
                             auto_start: false,
@@ -690,6 +703,31 @@ pub fn sync_databases_status(
 
                         // 只添加一次同类型数据库
                         break;
+                    }
+                }
+            }
+        }
+
+        // 检查并更新现有数据库的凭据
+        #[cfg(target_os = "macos")]
+        {
+            for mut db_info in databases.clone() {
+                if db_info.username.is_none() || db_info.password.is_none() {
+                    let should_update = match db_info.db_type {
+                        DatabaseType::Redis | DatabaseType::Qdrant => false,
+                        _ => true,
+                    };
+
+                    if should_update {
+                        if db_info.username.is_none() {
+                            db_info.username = Some("admin".to_string());
+                        }
+                        if db_info.password.is_none() {
+                            db_info.password = Some("admin888".to_string());
+                        }
+                        db_info.updated_at = crate::core::utils::get_timestamp();
+                        state.update_database(db_info);
+                        has_updates = true;
                     }
                 }
             }

@@ -4,13 +4,16 @@ import {
   FiGrid,
   FiZap,
   FiShare2,
-  FiRepeat,
-  FiList,
   FiAlertTriangle,
   FiChevronLeft,
   FiChevronRight,
   FiLoader,
-  FiCheck
+  FiCheck,
+  FiCopy,
+  FiDatabase,
+  FiLayers,
+  FiBox,
+  FiServer
 } from 'react-icons/fi';
 import {
   getDatabases,
@@ -30,46 +33,48 @@ const TaskStatus = {
 } as const;
 
 export const SUPPORTED_DATABASES = [
-  { id: 'mysql', type: 'mysql', name: 'MySQL', icon: 'grid_view', colorClass: 'text-blue-500 bg-blue-500/10' },
+  { id: 'mysql', type: 'mysql', name: 'MySQL', icon: 'database', colorClass: 'text-blue-500 bg-blue-500/10' },
   {
     id: 'postgresql',
     type: 'postgresql',
     name: 'PostgreSQL',
-    icon: 'grid_view',
+    icon: 'layers',
     colorClass: 'text-blue-600 bg-blue-600/10'
   },
   {
     id: 'mongodb',
     type: 'mongodb',
     name: 'MongoDB',
-    icon: 'grid_view',
+    icon: 'server',
     colorClass: 'text-green-500 bg-green-500/10'
   },
-  { id: 'redis', type: 'redis', name: 'Redis', icon: 'bolt', colorClass: 'text-red-500 bg-red-500/10' },
-  { id: 'qdrant', type: 'qdrant', name: 'Qdrant', icon: 'hub', colorClass: 'text-indigo-500 bg-indigo-500/10' },
+  { id: 'redis', type: 'redis', name: 'Redis', icon: 'zap', colorClass: 'text-red-500 bg-red-500/10' },
+  { id: 'qdrant', type: 'qdrant', name: 'Qdrant', icon: 'box', colorClass: 'text-indigo-500 bg-indigo-500/10' },
   {
     id: 'surrealdb',
     type: 'surrealdb',
     name: 'SurrealDB',
-    icon: 'all_inclusive',
+    icon: 'share-2',
     colorClass: 'text-orange-500 bg-orange-500/10'
   }
 ];
 
-const getIconComponent = (iconName: string) => {
-  switch (iconName) {
-    case 'grid_view':
-      return FiGrid;
-    case 'bolt':
+const getIconComponent = (dbType: string) => {
+  switch (dbType) {
+    case 'mysql':
+      return FiDatabase;
+    case 'postgresql':
+      return FiLayers;
+    case 'mongodb':
+      return FiServer;
+    case 'redis':
       return FiZap;
-    case 'hub':
+    case 'qdrant':
+      return FiBox;
+    case 'surrealdb':
       return FiShare2;
-    case 'all_inclusive':
-      return FiRepeat;
-    case 'table_rows':
-      return FiList;
     default:
-      return FiList;
+      return FiGrid;
   }
 };
 
@@ -79,6 +84,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
   const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
   const [loading, setLoading] = useState<string | null>(null); // Track which db type is loading
   const [installTask, setInstallTask] = useState<AsyncTask | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const pollingRef = useRef<number | null>(null);
 
   // Clear polling on unmount
@@ -206,6 +212,13 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     }
   };
 
+  // 复制文本到剪贴板
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   // Helper to get disabled prop value
   const getDisabledValue = (isLoading: boolean): boolean | undefined => {
     return isLoading ? true : undefined;
@@ -222,7 +235,9 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
     port: '-',
     meta: 'Click to install',
     icon: db.icon,
-    colorClass: db.colorClass
+    colorClass: db.colorClass,
+    username: undefined,
+    password: undefined
   }));
 
   const allDatabases = [...databases, ...notInstalledDbs].sort((a, b) => a.name.localeCompare(b.name));
@@ -255,6 +270,9 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
               <th className="px-3 py-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Port / Meta
               </th>
+              <th className="px-3 py-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
+                Credentials
+              </th>
               <th className="px-3 py-3 pr-5 text-right text-[10px] font-bold tracking-wider text-slate-500 uppercase dark:text-[#9da6b9]">
                 Actions
               </th>
@@ -262,7 +280,7 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
           </thead>
           <tbody className="dark:divide-border-dark divide-y divide-gray-200">
             {allDatabases.map((db) => {
-              const IconComponent = getIconComponent(db.icon || 'grid_view');
+              const IconComponent = getIconComponent(db.type);
               const displayInfo = getDbDisplayInfo(db.type);
               return (
                 <tr key={db.id} className="group transition-colors hover:bg-slate-50 dark:hover:bg-white/2">
@@ -307,6 +325,29 @@ export const InstancesView: React.FC<InstancesViewProps> = () => {
                       <p className="text-[11px] text-slate-500 italic opacity-60 dark:text-[#9da6b9]">
                         {db.meta || '-'}
                       </p>
+                    )}
+                  </td>
+                  <td className="px-3 py-3.5">
+                    {db.username && db.password && db.status !== 'notinstalled' ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-0.5">
+                          <p className="font-mono text-[10px] text-slate-500 dark:text-[#9da6b9]">
+                            <span className="opacity-60">U:</span> {db.username}
+                          </p>
+                          <p className="font-mono text-[10px] text-slate-500 dark:text-[#9da6b9]">
+                            <span className="opacity-60">P:</span> {db.password}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleCopy(`${db.username}:${db.password}`, db.id)}
+                          className="text-slate-400 hover:text-primary transition-colors dark:text-slate-600 dark:hover:text-white"
+                          title="Copy credentials"
+                        >
+                          {copiedId === db.id ? <FiCheck size={12} /> : <FiCopy size={12} />}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic opacity-50 dark:text-slate-600">-</span>
                     )}
                   </td>
                   <td className="px-3 py-3.5 pr-5 text-right">

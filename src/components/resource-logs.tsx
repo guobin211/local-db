@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FiChevronDown, FiSearch, FiDownload, FiTrash2 } from 'react-icons/fi';
 import { LogEntry } from '../types';
+import { getDatabases, DatabaseInfo } from '../command/database';
 
 const MOCK_LOGS: LogEntry[] = [
   {
@@ -65,7 +66,28 @@ const MOCK_LOGS: LogEntry[] = [
 export const ResourceLogs: React.FC = () => {
   const [logs, _setLogs] = useState<LogEntry[]>(MOCK_LOGS);
   const [filter, setFilter] = useState('');
+  const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
+  const [selectedDbId, setSelectedDbId] = useState<string>('');
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const loadDatabases = async () => {
+      try {
+        const dbs = await getDatabases();
+        // 过滤出已安装的数据库
+        const installedDbs = dbs.filter(db => db.status !== 'notinstalled');
+        setDatabases(installedDbs);
+
+        if (installedDbs.length > 0 && !selectedDbId) {
+          setSelectedDbId(installedDbs[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load databases:', error);
+      }
+    };
+
+    loadDatabases();
+  }, []);
 
   const filteredLogs = logs.filter(
     (l) =>
@@ -102,9 +124,20 @@ export const ResourceLogs: React.FC = () => {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <select className="dark:bg-card-dark dark:border-border-dark focus:ring-primary focus:border-primary h-10 appearance-none rounded-lg border border-gray-200 bg-white px-4 pr-10 text-sm font-bold text-slate-900 transition-all focus:ring-1 dark:text-white">
-              <option>MongoDB (Running)</option>
-              <option>Redis (Running)</option>
+            <select
+              value={selectedDbId}
+              onChange={(e) => setSelectedDbId(e.target.value)}
+              className="dark:bg-card-dark dark:border-border-dark focus:ring-primary focus:border-primary h-10 appearance-none rounded-lg border border-gray-200 bg-white px-4 pr-10 text-sm font-bold text-slate-900 transition-all focus:ring-1 dark:text-white"
+            >
+              {databases.length === 0 ? (
+                <option value="">No databases installed</option>
+              ) : (
+                databases.map((db) => (
+                  <option key={db.id} value={db.id}>
+                    {db.name} ({db.status === 'running' ? 'Running' : 'Stopped'})
+                  </option>
+                ))
+              )}
             </select>
             <FiChevronDown
               size={20}

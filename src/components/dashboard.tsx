@@ -210,17 +210,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onViewChange }) => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="dark:bg-card-dark dark:border-border-dark rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center justify-between">
+        <div className="dark:bg-card-dark dark:border-border-dark rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
             <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-              <FiCpu size={20} className="text-primary" />
+              <FiCpu size={18} className="text-primary" />
               CPU Usage
             </h4>
             <span className="text-primary font-mono text-sm font-bold">
               {systemInfo ? `${systemInfo.cpu_usage.toFixed(1)}%` : '...'}
             </span>
           </div>
-          <div className="h-32 w-full">
+          <div className="h-24 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={cpuHistory}>
                 <Bar dataKey="val" radius={[2, 2, 0, 0]}>
@@ -234,26 +234,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onViewChange }) => {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <p className="mt-3 text-[10px] tracking-wider text-slate-500 uppercase opacity-60 dark:text-[#9da6b9]">
+          <p className="mt-2 text-[10px] tracking-wider text-slate-500 uppercase opacity-60 dark:text-[#9da6b9]">
             Load average: {systemInfo ? systemInfo.load_average.toFixed(2) : '...'}
           </p>
         </div>
 
         {/* Memory Usage */}
-        <div className="dark:bg-card-dark dark:border-border-dark rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center justify-between">
+        <div className="dark:bg-card-dark dark:border-border-dark rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex flex-col gap-1">
             <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-              <FiHardDrive size={20} className="text-purple-500" />
+              <FiHardDrive size={18} className="text-purple-500" />
               Memory
             </h4>
-            <span className="font-mono text-sm font-bold text-purple-500">
+            <span className="self-end font-mono text-xs font-bold text-purple-500">
               {systemInfo
                 ? `${(systemInfo.memory_used / 1024 / 1024 / 1024).toFixed(1)} GB / ${(systemInfo.memory_total / 1024 / 1024 / 1024).toFixed(1)} GB`
                 : '...'}
             </span>
           </div>
-          <div className="flex h-32 flex-col items-center justify-center">
-            <div className="relative size-28">
+          <div className="flex h-24 flex-col items-center justify-center">
+            <div className="relative size-20">
               <svg className="size-full" viewBox="0 0 100 100">
                 <circle
                   className="dark:stroke-border-dark stroke-gray-200"
@@ -279,23 +279,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onViewChange }) => {
                 ></circle>
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center pt-2">
-                <span className="text-xl font-bold text-white">
+                <span className="text-lg font-bold text-white">
                   {systemInfo ? `${Math.round(systemInfo.memory_percentage)}%` : '...'}
                 </span>
                 <span className="text-[8px] font-bold tracking-widest text-[#9da6b9] uppercase">Used</span>
               </div>
             </div>
           </div>
-          <p className="mt-3 text-[10px] tracking-wider text-slate-500 uppercase opacity-60 dark:text-[#9da6b9]">
+          <p className="mt-2 text-[10px] tracking-wider text-slate-500 uppercase opacity-60 dark:text-[#9da6b9]">
             Swap usage: {systemInfo ? `${(systemInfo.swap_used / 1024 / 1024).toFixed(0)}MB` : '...'}
           </p>
         </div>
 
         {/* Disk Usage */}
-        <div className="dark:bg-card-dark dark:border-border-dark rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center justify-between">
+        <div className="dark:bg-card-dark dark:border-border-dark rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
             <h4 className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-              <FiUploadCloud size={20} className="text-amber-500" />
+              <FiUploadCloud size={18} className="text-amber-500" />
               Disk Usage
             </h4>
             <span className="font-mono text-sm font-bold text-amber-500">
@@ -304,7 +304,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onViewChange }) => {
                 : '...'}
             </span>
           </div>
-          <div className="flex h-32 flex-col justify-center gap-4">
+          <div className="flex h-24 flex-col justify-center gap-3">
             {systemInfo &&
               systemInfo.disks.slice(0, 2).map((disk, index) => (
                 <div key={index}>
@@ -324,7 +324,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onViewChange }) => {
                 </div>
               ))}
           </div>
-          <p className="mt-3 text-[10px] tracking-wider text-slate-500 uppercase opacity-60 dark:text-[#9da6b9]">
+          <p className="mt-2 text-[10px] tracking-wider text-slate-500 uppercase opacity-60 dark:text-[#9da6b9]">
             {systemInfo && systemInfo.disks.length > 0
               ? `${systemInfo.disks.length} disk${systemInfo.disks.length > 1 ? 's' : ''} mounted`
               : '...'}

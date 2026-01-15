@@ -119,7 +119,7 @@ impl DatabaseManager {
             ))
         }
 
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             if !self.is_installed(db_info) {
                 return Ok(OperationResult::error("Database is not installed"));
@@ -168,7 +168,7 @@ impl DatabaseManager {
             ))
         }
 
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             if self.get_status(db_info) != DatabaseStatus::Running {
                 return Ok(OperationResult::error("Database is not running"));

@@ -722,7 +722,7 @@ fn get_database_status_from_brew(
 }
 
 /// 检查 PID 文件中的进程是否存在
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn check_pid_file_status(pid_path: &std::path::Path) -> DatabaseStatus {
     use std::fs;
 

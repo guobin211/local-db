@@ -3,6 +3,7 @@ use anyhow::Result;
 use std::path::Path;
 
 /// Options used when installing a database on Windows.
+#[allow(dead_code)]
 pub struct WindowsInstallOptions<'a> {
     pub version: Option<&'a str>,
     pub port: Option<u16>,
@@ -828,4 +829,5 @@ mod imp {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub use imp::*;

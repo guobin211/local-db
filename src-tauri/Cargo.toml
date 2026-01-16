@@ -21,6 +21,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-process = "2.3.1"
+tauri-plugin-dialog = "2"
 lazy_static = "1"
 reqwest = { version = "0.12", features = [
     "json",

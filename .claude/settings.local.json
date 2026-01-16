@@ -29,7 +29,13 @@
       "Bash(openspec-cn list:*)",
       "Bash(openspec-cn:*)",
       "Bash(pnpm changelog:preview)",
-      "Bash(pnpm changelog)"
+      "Bash(pnpm changelog)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(cargo clippy:*)"
     ]
   }
 }

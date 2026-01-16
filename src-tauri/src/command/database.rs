@@ -479,6 +479,67 @@ pub fn update_database_autostart(
     }
 }
 
+/// 读取数据库日志文件
+#[tauri::command]
+pub fn read_database_logs(
+    state: State<AppState>,
+    id: String,
+    lines: Option<usize>,
+) -> Result<Vec<String>, String> {
+    match state.get_database(&id) {
+        Some(db_info) => {
+            let log_path = std::path::Path::new(&db_info.log_path);
+
+            // 如果日志路径不存在，返回空数组
+            if !log_path.exists() {
+                return Ok(vec![]);
+            }
+
+            // 读取日志文件
+            let content = std::fs::read_to_string(log_path)
+                .map_err(|e| format!("Failed to read log file: {}", e))?;
+
+            let mut log_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+            // 如果指定了行数，返回最后 N 行
+            if let Some(n) = lines {
+                if log_lines.len() > n {
+                    log_lines = log_lines.split_off(log_lines.len() - n);
+                }
+            }
+
+            Ok(log_lines)
+        }
+        None => Err("Database not found".to_string()),
+    }
+}
+
+/// 清除数据库日志文件
+#[tauri::command]
+pub fn clear_database_logs(state: State<AppState>, id: String) -> OperationResult<()> {
+    match state.get_database(&id) {
+        Some(db_info) => {
+            let log_path = std::path::Path::new(&db_info.log_path);
+
+            if log_path.exists() {
+                match std::fs::write(log_path, "") {
+                    Ok(_) => OperationResult::success("Log file cleared successfully", None),
+                    Err(e) => OperationResult::error(format!("Failed to clear log file: {}", e)),
+                }
+            } else {
+                OperationResult::success("Log file does not exist", None)
+            }
+        }
+        None => OperationResult::error("Database not found"),
+    }
+}
+
+/// 保存日志文件到指定路径
+#[tauri::command]
+pub fn save_logs_to_file(content: String, path: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("Failed to save file: {}", e))
+}
+
 /// 获取任务状态
 #[tauri::command]
 pub fn get_task_status(state: State<AppState>, task_id: String) -> Option<crate::core::AsyncTask> {
@@ -509,27 +570,19 @@ pub fn sync_databases_status(
         #[cfg(target_os = "macos")]
         let brew_services = get_all_homebrew_services_status();
 
-        let mut has_updates = false;
+        let mut _has_updates = false;
 
-        for mut db_info in databases {
+        for db_info in &databases {
             let actual_status = match db_info.db_type {
                 // Qdrant 通过 PID 文件检查状态
                 DatabaseType::Qdrant => {
-                    let pid_file = if cfg!(target_os = "windows") {
-                        "qdrant.pid"
-                    } else {
-                        "qdrant.pid"
-                    };
+                    let pid_file =  "qdrant.pid";
                     let pid_path = Path::new(&db_info.data_path).join(pid_file);
                     check_pid_file_status(&pid_path)
                 }
                 // SurrealDB 通过 PID 文件检查状态
                 DatabaseType::SurrealDB => {
-                    let pid_file = if cfg!(target_os = "windows") {
-                        "surrealdb.pid"
-                    } else {
-                        "surrealdb.pid"
-                    };
+                    let pid_file = "surrealdb.pid";
                     let pid_path = Path::new(&db_info.data_path).join(pid_file);
                     check_pid_file_status(&pid_path)
                 }
@@ -620,10 +673,11 @@ pub fn sync_databases_status(
 
             // 如果状态有变化，更新数据库信息
             if db_info.status != actual_status {
-                db_info.status = actual_status.clone();
-                db_info.updated_at = crate::core::utils::get_timestamp();
-                state.update_database(db_info);
-                has_updates = true;
+                let mut updated_db = db_info.clone();
+                updated_db.status = actual_status.clone();
+                updated_db.updated_at = crate::core::utils::get_timestamp();
+                state.update_database(updated_db);
+                _has_updates = true;
             }
         }
 
@@ -659,7 +713,7 @@ pub fn sync_databases_status(
                         let version = if service_name.contains('@') {
                             service_name
                                 .split('@')
-                                .last()
+                                .next_back()
                                 .unwrap_or("unknown")
                                 .to_string()
                         } else {
@@ -699,7 +753,7 @@ pub fn sync_databases_status(
                         };
 
                         state.update_database(new_db);
-                        has_updates = true;
+                        _has_updates = true;
 
                         // 只添加一次同类型数据库
                         break;
@@ -711,23 +765,22 @@ pub fn sync_databases_status(
         // 检查并更新现有数据库的凭据
         #[cfg(target_os = "macos")]
         {
-            for mut db_info in databases.clone() {
+            for db_info in &databases {
                 if db_info.username.is_none() || db_info.password.is_none() {
-                    let should_update = match db_info.db_type {
-                        DatabaseType::Redis | DatabaseType::Qdrant => false,
-                        _ => true,
-                    };
+                    let should_update =
+                        !matches!(db_info.db_type, DatabaseType::Redis | DatabaseType::Qdrant);
 
                     if should_update {
-                        if db_info.username.is_none() {
-                            db_info.username = Some("admin".to_string());
+                        let mut updated_db = db_info.clone();
+                        if updated_db.username.is_none() {
+                            updated_db.username = Some("admin".to_string());
                         }
-                        if db_info.password.is_none() {
-                            db_info.password = Some("admin888".to_string());
+                        if updated_db.password.is_none() {
+                            updated_db.password = Some("admin888".to_string());
                         }
-                        db_info.updated_at = crate::core::utils::get_timestamp();
-                        state.update_database(db_info);
-                        has_updates = true;
+                        updated_db.updated_at = crate::core::utils::get_timestamp();
+                        state.update_database(updated_db);
+                        _has_updates = true;
                     }
                 }
             }

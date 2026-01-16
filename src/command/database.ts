@@ -120,3 +120,14 @@ export async function updateDatabaseAutostart(id: string, autoStart: boolean): P
 export async function syncDatabasesStatus(): Promise<DatabaseInfo[]> {
   return invoke('sync_databases_status');
 }
+
+// 读取数据库日志文件
+// lines: 可选参数，指定返回最后多少行日志，不指定则返回全部
+export async function readDatabaseLogs(id: string, lines?: number): Promise<string[]> {
+  return invoke('read_database_logs', { id, lines });
+}
+
+// 清除数据库日志文件
+export async function clearDatabaseLogs(id: string): Promise<OperationResult> {
+  return invoke('clear_database_logs', { id });
+}

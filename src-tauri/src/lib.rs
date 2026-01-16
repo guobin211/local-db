@@ -15,6 +15,7 @@ pub fn run() {
     println!("Startup time: {}ms", startup_duration.as_millis());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_os::init())
         .plugin(
@@ -51,6 +52,9 @@ pub fn run() {
             command::update_database_autostart,
             command::get_task_status,
             command::sync_databases_status,
+            command::read_database_logs,
+            command::clear_database_logs,
+            command::save_logs_to_file,
             // 设置命令
             command::get_settings,
             command::update_settings,
